@@ -1,0 +1,84 @@
+#!/bin/sh
+set -eu
+
+#
+# Push multi-arch manifest list for docker images
+#
+# Dependencies: docker, wget, jq
+#
+
+log() {
+  >&2 echo "${@}"
+}
+
+cancel() {
+  log "${@}"
+  return 1
+}
+
+[ -n "${2-}" ] || cancel "Syntax: ${0} <image> <tag>"
+IMAGE_NAME="${1}"
+IMAGE_TAG="${2}"
+UPDATE_LATEST="${UPDATE_LATEST:-yes}"
+
+
+#
+# Mapping of architecture id
+#
+# |          |         |   OCI Platform  |
+# | uname -m |   id    | arch  | variant |
+# | -------- | ------- | ------| ------- |
+# | x86_64   | amd64   | amd64 |         |
+# | x86      | i386    | 386   |         |
+# |          | arm32v5 | arm   | v5      |
+# | armv6    | arm32v6 | arm   | v6      |
+# | armv7    | arm32v7 | arm   | v7      |
+# | armv7l   | arm32v7 | arm   | v7      |
+# | aarch64  | arm64v8 | arm64 | v8      |
+#
+# Resources:
+# - https://github.com/docker-library/official-images#architectures-other-than-amd64
+# - https://github.com/docker-library/official-images#multiple-architectures
+# - https://github.com/docker-library/official-images/blob/a7ad3081aa5f51584653073424217e461b72670a/bashbrew/go/vendor/src/github.com/docker-library/go-dockerlibrary/architecture/oci-platform.go#L14-L25
+# - https://golang.org/doc/install/source#environment
+# - https://docs.docker.com/engine/reference/commandline/manifest/
+#
+annotate_manifest() {
+  local image="${1}"
+  local tag="${2}"
+  local arch="${3}"
+  local oci_arch
+  local oci_variant
+  case "${arch}" in
+      x86_64)   oci_arch=amd64 ;;
+      x86)      oci_arch=386   ;;
+      aarch64)  oci_arch=arm64 && oci_variant=v8 ;;
+      armv7*)   oci_arch=arm   && oci_variant=v7 ;;
+      armv6*)   oci_arch=arm   && oci_variant=v6 ;;
+      armv5*)   oci_arch=arm   && oci_variant=v5 ;;
+      arm*)     oci_arch=arm   ;;
+      *)        oci_arch="${arch}" ;;
+  esac
+  docker manifest annotate "${image}:${tag}" "${image}:${arch}-${tag}" --arch "${oci_arch}" ${oci_variant:+--variant "${oci_variant}"}
+}
+
+push_manifest() {
+  local image="${1}"
+  local tag="${2}"
+
+  local archs="$(wget -q -O- "https://registry.hub.docker.com/v1/repositories/${image}/tags" | jq -r ".[].name | scan(\"^([^-]+)-${tag}\$\") | .[]")"
+  [ -n "${archs}" ] || cancel "No arch-specific images found for manifest list ${image}:${tag}"
+  log "Creating manifest list ${image}:${tag} for archs: $(echo "${archs}" | xargs)"
+  echo "${archs}" | while IFS= read -r arch; do echo "${image}:${arch}-${tag}"; done | xargs docker manifest create "${image}:${tag}"
+  echo "${archs}" | while IFS= read -r arch; do annotate_manifest "${image}" "${tag}" "${arch}"; done
+  docker manifest push --purge "${image}:${tag}"
+}
+
+main() {
+  push_manifest "${IMAGE_NAME}" "${IMAGE_TAG}"
+  if [ "${UPDATE_LATEST}" = 'yes' ]; then
+    push_manifest "${IMAGE_NAME}" latest
+  fi
+}
+
+main
