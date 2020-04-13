@@ -75,6 +75,8 @@ variables:
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
+    - echo "IMAGE_PLATFORMS=${IMAGE_PLATFORMS}"
+    - echo "BUILD_CONTEXT=${BUILD_CONTEXT}"
     - oci='org.opencontainers.image'
     - docker buildx build >-
         --platform "${IMAGE_PLATFORMS}"
