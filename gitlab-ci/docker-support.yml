@@ -3,7 +3,7 @@ variables:
   IMAGE_VERSION:   "latest"
   IMAGE_PLATFORMS: "linux/amd64"
 
-.docker_support:.collect_image_metadata:
+.docker_support:.collect_image_metadata: &collect_image_metadata |
   image: alpine
   variables:
     IMAGE_NAME:      "${CI_PROJECT_PATH}:${IMAGE_VERSION}"
@@ -56,7 +56,7 @@ variables:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
-.docker_support:.build_image:
+.docker_support:.build_image: &build_image |
   variables:
     DOCKER_TAG:     "19.03.8"
     BUILDX_VERSION: "v0.3.1"
@@ -97,5 +97,5 @@ variables:
 
 .docker_support:.build_image_with_labels:
   script:
-  - .docker_support:.collect_image_metadata
-  - .docker_support:.build_image
+  - *collect_image_metadata
+  - *build_image
