@@ -1,0 +1,85 @@
+variables:
+  BUILD_CONTEXT: "."
+  IMAGE_VERSION: "latest"
+  IMAGE_PLATFORMS: "linux/amd64"
+  DOCKER_VERSION: "19.03.8"
+  DOCKER_BUILDX_VERSION: "v0.3.1"
+  DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
+  DOCKER_CLI_EXPERIMENTAL: "enabled"
+
+.docker_support:.build_image:.collect_metadata: &collect_metadata |
+  apk add wget jq coreutils
+  gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
+  value_of() { echo "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
+  owner_url="$(value_of .namespace.web_url)"
+  export IMAGE_NAME="${CI_PROJECT_PATH}:${IMAGE_VERSION}"
+  export IMAGE_VENDOR="${CI_PROJECT_NAMESPACE}"
+  export IMAGE_TITLE="${CI_PROJECT_TITLE}"
+  export IMAGE_URL="${CI_PROJECT_URL}"
+  export IMAGE_REVISION="${CI_COMMIT_SHA}"
+  export IMAGE_REF_NAME="${CI_COMMIT_REF_NAME}"
+  export IMAGE_LICENSES="$(value_of .license.key)"
+  export IMAGE_DESCRIPTION="$(value_of .description)"
+  export IMAGE_DOCUMENTATION="$(value_of .readme_url)"
+  export IMAGE_AUTHORS="${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}"
+  export IMAGE_CREATED="$(date -u --rfc-3339 seconds)"
+
+.docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
+  docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+  mkdir -p ~/.docker/cli-plugins
+  wget -q -O ~/.docker/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/${DOCKER_BUILDX_VERSION}/buildx-${DOCKER_BUILDX_VERSION}.linux-amd64"
+  chmod +x ~/.docker/cli-plugins/docker-buildx
+  docker buildx create --use --name builder
+
+.docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
+  wget -q -O - "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}-amd64.tar.gz" | tar -C /usr/bin -xz
+  chmod +x /usr/bin/docker-credential-pass
+  apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/testing gnupg pass
+  export gpg_passphrase="${GPG_PASSPHRASE:-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9!#%&*+,-./:;<=>?@^_~;' | fold -w 64 | head -n 1)}"
+  cat <<EOF | gpg --batch --gen-key
+  Key-Type: 1
+  Name-Real: docker-credential-pass
+  Passphrase: ${gpg_passphrase}
+  EOF
+  gpg --list-keys docker-credential-pass | grep -o '^\s\(.*\)' | tr -d ' ' | xargs pass init
+  echo 'pass is initialized' | pass insert -e docker-credential-helpers/docker-pass-initialized-check
+  <<EOF gpg --passphrase-fd 0 --pinentry-mode loopback -d ~/.password-store/docker-credential-helpers/docker-pass-initialized-check.gpg
+  ${gpg_passphrase}
+  EOF
+  unset gpg_passphrase
+  mkdir -p ~/.docker
+  echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
+
+.docker_support:.build_image:
+  image: "docker:${DOCKER_VERSION}"
+  services:
+    - name: "docker:${DOCKER_VERSION}-dind"
+  before_script:
+    - set -euo pipefail
+    - *collect_metadata
+    - *configure_multiarch_builder
+    - *configure_docker_auth_pass
+    - |
+      <<EOF docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
+      ${CI_REGISTRY_PASSWORD}
+      EOF
+  script:
+    - oci='org.opencontainers.image'
+    - docker buildx build >-
+        --platform "${IMAGE_PLATFORMS}"
+        --tag "${CI_REGISTRY_IMAGE}"
+        --push
+        ${IMAGE_VENDOR:+--label "${oci}.vendor=${IMAGE_VENDOR}"}
+        ${IMAGE_TITLE:+--label "${oci}.title=${IMAGE_TITLE}"}
+        ${IMAGE_VERSION:+--label "${oci}.version=${IMAGE_VERSION}"}
+        ${IMAGE_CREATED:+--label "${oci}.created=${IMAGE_CREATED}"}
+        ${IMAGE_AUTHORS:+--label "${oci}.authors=${IMAGE_AUTHORS}"}
+        ${IMAGE_URL:+--label "${oci}.url=${IMAGE_URL}"}
+        ${IMAGE_DOCUMENTATION:+--label "${oci}.documentation=${IMAGE_DOCUMENTATION}"}
+        ${IMAGE_REVISION:+--label "${oci}.revision=${IMAGE_REVISION}"}
+        ${IMAGE_LICENSES:+--label "${oci}.licenses=${IMAGE_LICENSES}"}
+        ${IMAGE_REF_NAME:+--label "${oci}.ref.name=${IMAGE_REF_NAME}"}
+        ${IMAGE_DESCRIPTION:+--label "${oci}.description=${IMAGE_DESCRIPTION}"}
+        "${BUILD_CONTEXT}"
+  after_script:
+    - docker logout
