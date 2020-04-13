@@ -1,10 +1,14 @@
 variables:
-  BUILD_CONTEXT:   "."
-  IMAGE_VERSION:   "latest"
+  BUILD_CONTEXT: "."
+  IMAGE_VERSION: "latest"
   IMAGE_PLATFORMS: "linux/amd64"
+  DOCKER_VERSION: "19.03.8"
+  DOCKER_BUILDX_VERSION: "v0.3.1"
+  DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
+  DOCKER_CLI_EXPERIMENTAL: "enabled"
 
 .docker_support:.build_image:.collect_metadata: &collect_metadata |
-  apk add jq
+  apk add wget jq coreutils
   gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
   value_of() { echo "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
   owner_url="$(value_of .namespace.web_url)"
@@ -23,7 +27,7 @@ variables:
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
   mkdir -p ~/.docker/cli-plugins
-  wget -q -O ~/.docker/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64"
+  wget -q -O ~/.docker/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/${DOCKER_BUILDX_VERSION}/buildx-${DOCKER_BUILDX_VERSION}.linux-amd64"
   chmod +x ~/.docker/cli-plugins/docker-buildx
   docker buildx create --use --name builder
 
@@ -47,14 +51,9 @@ variables:
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
 .docker_support:.build_image:
-  variables:
-    DOCKER_TAG:     "19.03.8"
-    BUILDX_VERSION: "v0.3.1"
-    DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
-    DOCKER_CLI_EXPERIMENTAL: "enabled"
-  image: "docker:${DOCKER_TAG}"
+  image: "docker:${DOCKER_VERSION}"
   services:
-    - name: "docker:${DOCKER_TAG}-dind"
+    - name: "docker:${DOCKER_VERSION}-dind"
   before_script:
     - set -euo pipefail
     - *collect_metadata
@@ -65,8 +64,6 @@ variables:
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
-    - echo "IMAGE_PLATFORMS=${IMAGE_PLATFORMS}"
-    - echo "BUILD_CONTEXT=${BUILD_CONTEXT}"
     - oci='org.opencontainers.image'
     - docker buildx build >-
         --platform "${IMAGE_PLATFORMS}"
