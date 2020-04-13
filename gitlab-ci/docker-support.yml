@@ -67,7 +67,7 @@ variables:
     - name: "docker:${DOCKER_TAG}-dind"
   before_script:
     - set -euo pipefail
-    - [ ! -r ./image-metadata ] || . ./image-metadata
+    - "[ ! -r ./image-metadata ] || . ./image-metadata"
     - *configure_multiarch_builder
     - *configure_docker_auth_pass
     - |
