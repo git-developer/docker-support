@@ -7,23 +7,6 @@ variables:
   DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
   DOCKER_CLI_EXPERIMENTAL: "enabled"
 
-.docker_support:.build_image:.collect_metadata: &collect_metadata |
-  apk add wget jq coreutils
-  gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
-  value_of() { echo "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
-  owner_url="$(value_of .namespace.web_url)"
-  export IMAGE_NAME="${CI_PROJECT_PATH}:${IMAGE_VERSION}"
-  export IMAGE_VENDOR="${CI_PROJECT_NAMESPACE}"
-  export IMAGE_TITLE="${CI_PROJECT_TITLE}"
-  export IMAGE_URL="${CI_PROJECT_URL}"
-  export IMAGE_REVISION="${CI_COMMIT_SHA}"
-  export IMAGE_REF_NAME="${CI_COMMIT_REF_NAME}"
-  export IMAGE_LICENSES="$(value_of .license.key)"
-  export IMAGE_DESCRIPTION="$(value_of .description)"
-  export IMAGE_DOCUMENTATION="$(value_of .readme_url)"
-  export IMAGE_AUTHORS="${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}"
-  export IMAGE_CREATED="$(date -u --rfc-3339 seconds)"
-
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
   mkdir -p ~/.docker/cli-plugins
