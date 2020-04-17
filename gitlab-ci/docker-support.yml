@@ -46,7 +46,7 @@ variables:
   -  echo >labels "${oci}.version=${IMAGE_VERSION}"
   -  echo >labels "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
   -  echo >labels "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
-  -  echo >labels "${oci}.url=${IMAGE_URL:-"${CI_PROJECT_URL}}"
+  -  echo >labels "${oci}.url=${IMAGE_URL:-${CI_PROJECT_URL}}"
   -  echo >labels "${oci}.documentation=${IMAGE_DOCUMENTATION:-$(value_of .readme_url)}"
   -  echo >labels "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"
   -  echo >labels "${oci}.licenses=${IMAGE_LICENSES:-$(value_of .license.key)}"
