@@ -50,7 +50,7 @@ variables:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
-.docker_support:.collect_labels
+.docker_support:.collect_labels:
   image: "alpine"
   script:
   -  apk add wget jq coreutils
@@ -58,22 +58,22 @@ variables:
   -  value_of() { echo "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
   -  owner_url="$(value_of .namespace.web_url)"
   -  oci='org.opencontainers.image'
-  -  >labels echo "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"}
-  -  >labels echo "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"}
-  -  >labels echo "${oci}.version=${IMAGE_VERSION}"}
-  -  >labels echo "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"}
-  -  >labels echo "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"}
-  -  >labels echo "${oci}.url=${IMAGE_URL:-"${CI_PROJECT_URL}}"}
-  -  >labels echo "${oci}.documentation=${IMAGE_DOCUMENTATION:-$(value_of .readme_url)}"}
-  -  >labels echo "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"}
-  -  >labels echo "${oci}.licenses=${IMAGE_LICENSES:-$(value_of .license.key)}"}
-  -  >labels echo "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"}
-  -  >labels echo "${oci}.description=${IMAGE_DESCRIPTION:-$(value_of .description)}"}
+  -  echo >labels "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"}
+  -  echo >labels "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"}
+  -  echo >labels "${oci}.version=${IMAGE_VERSION}"}
+  -  echo >labels "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"}
+  -  echo >labels "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"}
+  -  echo >labels "${oci}.url=${IMAGE_URL:-"${CI_PROJECT_URL}}"}
+  -  echo >labels "${oci}.documentation=${IMAGE_DOCUMENTATION:-$(value_of .readme_url)}"}
+  -  echo >labels "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"}
+  -  echo >labels "${oci}.licenses=${IMAGE_LICENSES:-$(value_of .license.key)}"}
+  -  echo >labels "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"}
+  -  echo >labels "${oci}.description=${IMAGE_DESCRIPTION:-$(value_of .description)}"}
   artifacts:
     paths:
     - labels
 
-.docker_support:.base
+.docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
   services:
     - name: "docker:${DOCKER_VERSION}-dind"
