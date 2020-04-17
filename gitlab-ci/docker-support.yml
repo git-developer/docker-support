@@ -50,13 +50,38 @@ variables:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
-.docker_support:.build_image:
+.docker_support:.collect_labels
+  image: "alpine"
+  script:
+  -  apk add wget jq coreutils
+  -  gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
+  -  value_of() { echo "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
+  -  owner_url="$(value_of .namespace.web_url)"
+  -  oci='org.opencontainers.image'
+  -  >labels echo "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"}
+  -  >labels echo "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"}
+  -  >labels echo "${oci}.version=${IMAGE_VERSION}"}
+  -  >labels echo "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"}
+  -  >labels echo "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"}
+  -  >labels echo "${oci}.url=${IMAGE_URL:-"${CI_PROJECT_URL}}"}
+  -  >labels echo "${oci}.documentation=${IMAGE_DOCUMENTATION:-$(value_of .readme_url)}"}
+  -  >labels echo "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"}
+  -  >labels echo "${oci}.licenses=${IMAGE_LICENSES:-$(value_of .license.key)}"}
+  -  >labels echo "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"}
+  -  >labels echo "${oci}.description=${IMAGE_DESCRIPTION:-$(value_of .description)}"}
+  artifacts:
+    paths:
+    - labels
+
+.docker_support:.base
   image: "docker:${DOCKER_VERSION}"
   services:
     - name: "docker:${DOCKER_VERSION}-dind"
+
+.docker_support:.build_image:
+  extends: .docker_support:.base
   before_script:
     - set -euo pipefail
-    - *collect_metadata
     - *configure_multiarch_builder
     - *configure_docker_auth_pass
     - |
@@ -64,22 +89,13 @@ variables:
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
-    - oci='org.opencontainers.image'
+    - |
+      [ ! -r ./labels ] || while IFS= read -r label; do label_args="${label_args:+${label_args} }--label \"${label}\""; done <./labels
     - docker buildx build >-
         --platform "${IMAGE_PLATFORMS}"
         --tag "${CI_REGISTRY_IMAGE}"
         --push
-        ${IMAGE_VENDOR:+--label "${oci}.vendor=${IMAGE_VENDOR}"}
-        ${IMAGE_TITLE:+--label "${oci}.title=${IMAGE_TITLE}"}
-        ${IMAGE_VERSION:+--label "${oci}.version=${IMAGE_VERSION}"}
-        ${IMAGE_CREATED:+--label "${oci}.created=${IMAGE_CREATED}"}
-        ${IMAGE_AUTHORS:+--label "${oci}.authors=${IMAGE_AUTHORS}"}
-        ${IMAGE_URL:+--label "${oci}.url=${IMAGE_URL}"}
-        ${IMAGE_DOCUMENTATION:+--label "${oci}.documentation=${IMAGE_DOCUMENTATION}"}
-        ${IMAGE_REVISION:+--label "${oci}.revision=${IMAGE_REVISION}"}
-        ${IMAGE_LICENSES:+--label "${oci}.licenses=${IMAGE_LICENSES}"}
-        ${IMAGE_REF_NAME:+--label "${oci}.ref.name=${IMAGE_REF_NAME}"}
-        ${IMAGE_DESCRIPTION:+--label "${oci}.description=${IMAGE_DESCRIPTION}"}
+        ${label_args:+${label_args}}
         "${BUILD_CONTEXT}"
   after_script:
     - docker logout
