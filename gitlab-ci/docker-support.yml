@@ -74,7 +74,7 @@ variables:
   script:
     - |
       [ ! -r ./labels ] || while IFS= read -r label; do label_args="${label_args:+${label_args} }--label \"${label}\""; done <./labels
-    - docker buildx build >-
+    - echo docker buildx build >-
         --platform "${IMAGE_PLATFORMS}"
         --tag "${CI_REGISTRY_IMAGE}"
         --push
