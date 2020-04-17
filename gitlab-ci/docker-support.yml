@@ -80,7 +80,7 @@ variables:
     - |
       [ ! -r ./labels ] || while IFS= read -r label; do label_args="${label_args:+${label_args} }${label:+--label $(set | sed -nE "s/label=(.*)$/\1/p")}"; done <labels
     - >-
-        docker buildx build
+        echo docker buildx build
         --platform "${IMAGE_PLATFORMS}"
         --tag "${CI_REGISTRY_IMAGE}"
         --push
