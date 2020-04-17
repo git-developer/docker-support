@@ -78,7 +78,7 @@ variables:
       EOF
   script:
     - |
-      [ ! -r ./labels ] || while IFS= read -r label; do label_args="${label_args:+${label_args} }--label \"${label}\""; done <./labels
+      [ ! -r ./labels ] || while IFS= read -r label; do label_args="${label_args:+${label_args} }${label:+--label $(set | sed -nE "s/label=(.*)$/\1/p")}"; done <labels
     - >-
         echo docker buildx build
         --platform "${IMAGE_PLATFORMS}"
