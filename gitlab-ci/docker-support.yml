@@ -40,23 +40,24 @@ variables:
   script:
   - apk add wget jq coreutils
   - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
-  - value_of() { echo "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
+  - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
+  - mkdir -p labels
   - owner_url="$(value_of .namespace.web_url)"
   - oci='org.opencontainers.image'
-  - echo >>labels "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
-  - echo >>labels "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"
-  - echo >>labels "${oci}.version=${IMAGE_VERSION}"
-  - echo >>labels "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
-  - echo >>labels "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
-  - echo >>labels "${oci}.url=${IMAGE_URL:-${CI_PROJECT_URL}}"
-  - echo >>labels "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"
-  - echo >>labels "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"
+  - echo >"labels/${oci}.vendor"   "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
+  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"
+  - echo >"labels/${oci}.version"  "${oci}.version=${IMAGE_VERSION}"
+  - echo >"labels/${oci}.created"  "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
+  - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
+  - echo >"labels/${oci}.url"      "${oci}.url=${IMAGE_URL:-${CI_PROJECT_URL}}"
+  - echo >"labels/${oci}.revision" "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"
+  - echo >"labels/${oci}.ref.name" "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"
   - IMAGE_DOCUMENTATION="${IMAGE_DOCUMENTATION:-$(value_of .readme_url)}"
-  - if [ -n "${IMAGE_DOCUMENTATION}" ]; then echo >>labels "${oci}.documentation=${IMAGE_DOCUMENTATION}"; fi
+  - if [ -n "${IMAGE_DOCUMENTATION}" ]; then echo >"labels/${oci}.documentation" "${oci}.documentation=${IMAGE_DOCUMENTATION}"; fi
   - IMAGE_LICENSES="${IMAGE_LICENSES:-$(value_of .license.key)}"
-  - if [ -n "${IMAGE_LICENSES}" ]; then echo >>labels "${oci}.licenses=${IMAGE_LICENSES}"; fi
+  - if [ -n "${IMAGE_LICENSES}" ]; then echo >"labels/${oci}.licenses" "${oci}.licenses=${IMAGE_LICENSES}"; fi
   - IMAGE_DESCRIPTION="${IMAGE_DESCRIPTION:-$(value_of .description)}"
-  - if [ -n "${IMAGE_DESCRIPTION}" ]; then echo >>labels "${oci}.description=${IMAGE_DESCRIPTION}"; fi
+  - if [ -n "${IMAGE_DESCRIPTION}" ]; then echo >"labels/${oci}.description" "${oci}.description=${IMAGE_DESCRIPTION}"; fi
   artifacts:
     paths:
     - labels
@@ -77,8 +78,7 @@ variables:
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
-    - |
-      [ ! -r ./labels ] || while IFS= read -r label; do label_args="${label_args:+${label_args} }${label:+--label $(set | sed -nE "s/label=(.*)$/\1/p")}"; done <labels
+    - find ./labels -type f -exec sh -c 'printf -- "--label\0"; printf "%s\0" "$(cat {})"' \; | xargs -0 sh -c 'printf "ARG: %s\n" docker buildx build --platform "${IMAGE_PLATFORMS}" --tag "${CI_REGISTRY_IMAGE}" --push "${@}" "${BUILD_CONTEXT}"'
     - >-
         echo docker buildx build
         --platform "${IMAGE_PLATFORMS}"
