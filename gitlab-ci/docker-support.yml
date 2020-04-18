@@ -43,7 +43,8 @@ default:
   before_script:
   - set -euo pipefail
   script:
-  - echo >tags "${CI_REGISTRY_IMAGE}"
+  - mkdir -p tags
+  - echo >"tags/${IMAGE_VERSION}" "${CI_REGISTRY_IMAGE}"
   artifacts:
     paths:
     - tags
@@ -56,9 +57,9 @@ default:
   - apk add wget jq coreutils
   - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
-  - mkdir -p labels
   - owner_url="$(value_of .namespace.web_url)"
   - oci='org.opencontainers.image'
+  - mkdir -p labels
   - echo >"labels/${oci}.vendor"   "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
   - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"
   - echo >"labels/${oci}.version"  "${oci}.version=${IMAGE_VERSION}"
@@ -110,8 +111,8 @@ default:
   script:
     - |
       {
-        [ ! -r ./tags ] || while IFS= read -r line; do printf "\0--tag\0${line}"; done <./tags
-        find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
+        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0--tag\0%s"   "$(cat {})"' \;
+        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
       } | xargs -0 sh -c \
       'docker buildx build --cache-from "type=local,src=${BUILD_CACHE}" --platform "${IMAGE_PLATFORMS}" --push "${@}" "${BUILD_CONTEXT}"'
   after_script:
@@ -130,8 +131,8 @@ default:
   script:
     - |
       {
-        [ ! -r ./tags ] || while IFS= read -r line; do printf "\0--tag\0${line}"; done <./tags
-        find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
+        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0--tag\0%s"   "$(cat {})"' \;
+        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
       } | xargs -0 sh -c \
       'docker buildx build --platform "${IMAGE_PLATFORMS}" --push "${@}" "${BUILD_CONTEXT}"'
   after_script:
