@@ -78,7 +78,8 @@ variables:
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
-    - find ./labels -type f -exec sh -c 'printf -- "--label\0"; printf "%s\0" "$(cat {})"' \; | xargs -0 sh -c 'printf "ARG: %s\n" docker buildx build --platform "${IMAGE_PLATFORMS}" --tag "${CI_REGISTRY_IMAGE}" --push "${@}" "${BUILD_CONTEXT}"'
+    - |
+      find ./labels -type f -exec sh -c 'printf -- "--label\0"; printf "%s\0" "$(cat {})"' \; | xargs -0 sh -c 'printf "ARG: %s\n" docker buildx build --platform "${IMAGE_PLATFORMS}" --tag "${CI_REGISTRY_IMAGE}" --push "${@}" "${BUILD_CONTEXT}"'
     - >-
         echo docker buildx build
         --platform "${IMAGE_PLATFORMS}"
