@@ -33,6 +33,16 @@ variables:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
+.docker_support:.collect_tags:
+  image: "alpine"
+  before_script:
+  - set -euo pipefail
+  script:
+  - echo >tags "${CI_REGISTRY_IMAGE}"
+  artifacts:
+    paths:
+    - tags
+
 .docker_support:.collect_labels:
   image: "alpine"
   before_script:
@@ -78,9 +88,11 @@ variables:
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
-    - >-
-      find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
-      | xargs -0 sh -c
-      'docker buildx build --platform "${IMAGE_PLATFORMS}" --tag "${CI_REGISTRY_IMAGE}" --push "${@}" "${BUILD_CONTEXT}"'
+    - |
+      {
+        [ ! -r ./tags ] || while IFS= read -r line; do printf "\0--tag\0${line}"; done <./tags
+        find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
+      } | xargs -0 sh -c \
+      'docker buildx build --platform "${IMAGE_PLATFORMS}" --push "${@}" "${BUILD_CONTEXT}"'
   after_script:
     - docker logout
