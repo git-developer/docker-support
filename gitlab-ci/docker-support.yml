@@ -79,8 +79,7 @@ variables:
       EOF
   script:
     - |
-      set -x
-      find ./labels -type f -exec sh -c 'printf "%s\0" "--label"; printf "%s\0" "$(cat {})"' \; | xargs -0 sh -c 'docker buildx build --platform "${IMAGE_PLATFORMS}" --tag "${CI_REGISTRY_IMAGE}" --push "${@}" "${BUILD_CONTEXT}"'
+      find ./labels -type f -exec sh -c 'printf "%s\0" "--label"; printf "%s\0" "$(cat {})"' \; | xargs -0 sh -c 'printf 'ARG: %s\n' docker buildx build --platform "${IMAGE_PLATFORMS}" --tag "${CI_REGISTRY_IMAGE}" --push "${@}" "${BUILD_CONTEXT}"'
     - >-
         echo docker buildx build
         --platform "${IMAGE_PLATFORMS}"
