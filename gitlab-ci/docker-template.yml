@@ -9,6 +9,10 @@ stages:
   - prepare
   - build
 
+Prepare Container Image:
+  extends: .docker_support:.build_bare_image
+  stage: prepare
+
 Collect Tags:
   extends: .docker_support:.collect_tags
   stage: prepare
@@ -18,5 +22,5 @@ Collect Labels:
   stage: prepare
 
 Build Container Image:
-  extends: .docker_support:.build_image
+  extends: .docker_support:.build_full_image
   stage: build

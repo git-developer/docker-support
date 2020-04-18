@@ -6,6 +6,11 @@ variables:
   DOCKER_BUILDX_VERSION: "v0.3.1"
   DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
   DOCKER_CLI_EXPERIMENTAL: "enabled"
+  BUILD_CACHE: "build-cache"
+
+default:
+  artifacts:
+    expire_in: 1 hour
 
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
@@ -76,6 +81,41 @@ variables:
   image: "docker:${DOCKER_VERSION}"
   services:
     - name: "docker:${DOCKER_VERSION}-dind"
+
+.docker_support:.build_bare_image:
+  extends: .docker_support:.base
+  before_script:
+    - set -euo pipefail
+    - *configure_multiarch_builder
+  script:
+    - docker buildx build >-
+        --cache-to "type=local,dest=${BUILD_CACHE}"
+        --platform "${IMAGE_PLATFORMS}"
+        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        "${BUILD_CONTEXT}"
+  artifacts:
+    paths:
+    - "${BUILD_CACHE}"
+
+.docker_support:.build_full_image:
+  extends: .docker_support:.base
+  before_script:
+    - set -euo pipefail
+    - *configure_multiarch_builder
+    - *configure_docker_auth_pass
+    - |
+      <<EOF docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
+      ${CI_REGISTRY_PASSWORD}
+      EOF
+  script:
+    - |
+      {
+        [ ! -r ./tags ] || while IFS= read -r line; do printf "\0--tag\0${line}"; done <./tags
+        find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
+      } | xargs -0 sh -c \
+      'docker buildx build --cache-from "type=local,src=${BUILD_CACHE}" --platform "${IMAGE_PLATFORMS}" --push "${@}" "${BUILD_CONTEXT}"'
+  after_script:
+    - docker logout
 
 .docker_support:.build_image:
   extends: .docker_support:.base
