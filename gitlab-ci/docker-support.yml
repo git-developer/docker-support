@@ -98,7 +98,7 @@ default:
     paths:
     - "${BUILD_CACHE}"
 
-.docker_support:.build_full_image:
+.docker_support:.publish_image:
   extends: .docker_support:.base
   before_script:
     - set -euo pipefail
@@ -112,26 +112,6 @@ default:
     - |
       {
         [ ! -d "${BUILD_CACHE}" ] || printf "\0--cache-from\0type=local,src=${BUILD_CACHE}"
-        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0--tag\0%s"   "$(cat {})"' \;
-        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
-      } | xargs -0 sh -c \
-      'docker buildx build --platform "${IMAGE_PLATFORMS}" --push "${@}" "${BUILD_CONTEXT}"'
-  after_script:
-    - docker logout
-
-.docker_support:.build_image:
-  extends: .docker_support:.base
-  before_script:
-    - set -euo pipefail
-    - *configure_multiarch_builder
-    - *configure_docker_auth_pass
-    - |
-      <<EOF docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
-      ${CI_REGISTRY_PASSWORD}
-      EOF
-  script:
-    - |
-      {
         [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0--tag\0%s"   "$(cat {})"' \;
         [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
       } | xargs -0 sh -c \
