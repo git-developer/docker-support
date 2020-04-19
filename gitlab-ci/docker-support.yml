@@ -90,6 +90,7 @@ default:
     - *configure_multiarch_builder
   script:
     - docker buildx build >-
+        --build-arg "BUILDKIT_INLINE_CACHE=1"
         --cache-to "type=local,dest=${BUILD_CACHE}"
         --platform "${IMAGE_PLATFORMS}"
         --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
@@ -97,6 +98,18 @@ default:
   artifacts:
     paths:
     - "${BUILD_CACHE}"
+
+.docker_support:.with_bare_image:
+  extends: .docker_support:.base
+  before_script:
+    - set -euo pipefail
+    - *configure_multiarch_builder
+    - docker buildx build >-
+        --build-arg "BUILDKIT_INLINE_CACHE=1"
+        --cache-from "type=local,src=${BUILD_CACHE}"
+        --platform "${IMAGE_PLATFORMS}"
+        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        "${BUILD_CONTEXT}"
 
 .docker_support:.publish_image:
   extends: .docker_support:.base
@@ -111,10 +124,13 @@ default:
   script:
     - |
       {
-        [ ! -d "${BUILD_CACHE}" ] || printf "\0--cache-from\0type=local,src=${BUILD_CACHE}"
-        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0--tag\0%s"   "$(cat {})"' \;
-        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0--label\0%s" "$(cat {})"' \;
+        printf "\0%s" "--build-arg" "BUILDKIT_INLINE_CACHE=1"
+        printf "\0%s" "--platform"  "${IMAGE_PLATFORMS}"
+        printf "\0%s" "--push"
+        [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0%s" "--tag"   "$(cat {})"' \;
+        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0%s" "--label" "$(cat {})"' \;
       } | xargs -0 sh -c \
-      'docker buildx build --platform "${IMAGE_PLATFORMS}" --push "${@}" "${BUILD_CONTEXT}"'
+      'docker buildx build --push "${@}" "${BUILD_CONTEXT}"'
   after_script:
     - docker logout
