@@ -131,6 +131,6 @@ default:
         [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0%s" "--tag"   "$(cat {})"' \;
         [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0%s" "--label" "$(cat {})"' \;
       } | xargs -0 sh -c \
-      'docker buildx build --push "${@}" "${BUILD_CONTEXT}"'
+      'docker buildx build "${@}" "${BUILD_CONTEXT}"'
   after_script:
     - docker logout
