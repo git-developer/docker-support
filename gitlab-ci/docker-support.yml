@@ -105,6 +105,7 @@ default:
     - *configure_multiarch_builder
     - docker buildx build >-
         --cache-from "type=local,src=${BUILD_CACHE}"
+        --load
         --platform "${IMAGE_PLATFORMS}"
         --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
         "${BUILD_CONTEXT}"
