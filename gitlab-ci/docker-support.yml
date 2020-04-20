@@ -131,7 +131,7 @@ default:
         [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
         [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0%s" "--tag"   "$(cat {})"' \;
         [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0%s" "--label" "$(cat {})"' \;
-      } | xargs -0 sh -c \
-      'docker buildx build "${@}" "${BUILD_CONTEXT}"'
+        printf "\0%s" "${BUILD_CONTEXT}"
+      } | xargs -0 sh -c 'docker buildx build "${@}"'
   after_script:
     - docker logout
