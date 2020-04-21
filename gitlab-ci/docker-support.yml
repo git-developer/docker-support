@@ -6,23 +6,11 @@ variables:
   DOCKER_BUILDX_VERSION: "v0.3.1"
   DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
   DOCKER_CLI_EXPERIMENTAL: "enabled"
+  BUILD_CACHE: "build-cache"
 
-.docker_support:.build_image:.collect_metadata: &collect_metadata |
-  apk add wget jq coreutils
-  gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
-  value_of() { echo "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
-  owner_url="$(value_of .namespace.web_url)"
-  export IMAGE_NAME="${CI_PROJECT_PATH}:${IMAGE_VERSION}"
-  export IMAGE_VENDOR="${CI_PROJECT_NAMESPACE}"
-  export IMAGE_TITLE="${CI_PROJECT_TITLE}"
-  export IMAGE_URL="${CI_PROJECT_URL}"
-  export IMAGE_REVISION="${CI_COMMIT_SHA}"
-  export IMAGE_REF_NAME="${CI_COMMIT_REF_NAME}"
-  export IMAGE_LICENSES="$(value_of .license.key)"
-  export IMAGE_DESCRIPTION="$(value_of .description)"
-  export IMAGE_DOCUMENTATION="$(value_of .readme_url)"
-  export IMAGE_AUTHORS="${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}"
-  export IMAGE_CREATED="$(date -u --rfc-3339 seconds)"
+default:
+  artifacts:
+    expire_in: 1 hour
 
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
@@ -34,7 +22,8 @@ variables:
 .docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
   wget -q -O - "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}-amd64.tar.gz" | tar -C /usr/bin -xz
   chmod +x /usr/bin/docker-credential-pass
-  apk add --no-cache -X http://dl-cdn.alpinelinux.org/alpine/edge/testing gnupg pass
+  apk add gnupg
+  apk add --no-cache -X https://alpine.global.ssl.fastly.net/alpine/edge/community pass
   export gpg_passphrase="${GPG_PASSPHRASE:-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9!#%&*+,-./:;<=>?@^_~;' | fold -w 64 | head -n 1)}"
   cat <<EOF | gpg --batch --gen-key
   Key-Type: 1
@@ -50,13 +39,81 @@ variables:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
-.docker_support:.build_image:
+.docker_support:.collect_tags:
+  image: "alpine"
+  before_script:
+  - set -euo pipefail
+  script:
+  - mkdir -p tags
+  - echo >"tags/${IMAGE_VERSION}" "${CI_REGISTRY_IMAGE}"
+  artifacts:
+    paths:
+    - tags
+
+.docker_support:.collect_labels:
+  image: "alpine"
+  before_script:
+  - set -euo pipefail
+  script:
+  - apk add wget jq coreutils
+  - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
+  - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
+  - owner_url="$(value_of .namespace.web_url)"
+  - oci='org.opencontainers.image'
+  - mkdir -p labels
+  - echo >"labels/${oci}.vendor"   "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
+  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"
+  - echo >"labels/${oci}.version"  "${oci}.version=${IMAGE_VERSION}"
+  - echo >"labels/${oci}.created"  "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
+  - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
+  - echo >"labels/${oci}.url"      "${oci}.url=${IMAGE_URL:-${CI_PROJECT_URL}}"
+  - echo >"labels/${oci}.revision" "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"
+  - echo >"labels/${oci}.ref.name" "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"
+  - IMAGE_DOCUMENTATION="${IMAGE_DOCUMENTATION:-$(value_of .readme_url)}"
+  - if [ -n "${IMAGE_DOCUMENTATION}" ]; then echo >"labels/${oci}.documentation" "${oci}.documentation=${IMAGE_DOCUMENTATION}"; fi
+  - IMAGE_LICENSES="${IMAGE_LICENSES:-$(value_of .license.key)}"
+  - if [ -n "${IMAGE_LICENSES}" ]; then echo >"labels/${oci}.licenses" "${oci}.licenses=${IMAGE_LICENSES}"; fi
+  - IMAGE_DESCRIPTION="${IMAGE_DESCRIPTION:-$(value_of .description)}"
+  - if [ -n "${IMAGE_DESCRIPTION}" ]; then echo >"labels/${oci}.description" "${oci}.description=${IMAGE_DESCRIPTION}"; fi
+  artifacts:
+    paths:
+    - labels
+
+.docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
   services:
     - name: "docker:${DOCKER_VERSION}-dind"
+
+.docker_support:.build_bare_image:
+  extends: .docker_support:.base
   before_script:
     - set -euo pipefail
-    - *collect_metadata
+    - *configure_multiarch_builder
+  script:
+    - docker buildx build >-
+        --cache-to "type=local,dest=${BUILD_CACHE},mode=max"
+        --platform "${IMAGE_PLATFORMS}"
+        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        "${BUILD_CONTEXT}"
+  artifacts:
+    paths:
+    - "${BUILD_CACHE}"
+
+.docker_support:.with_bare_image:
+  extends: .docker_support:.base
+  before_script:
+    - set -euo pipefail
+    - *configure_multiarch_builder
+    - docker buildx build >-
+        --cache-from "type=local,src=${BUILD_CACHE}"
+        --load
+        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        "${BUILD_CONTEXT}"
+
+.docker_support:.publish_image:
+  extends: .docker_support:.base
+  before_script:
+    - set -euo pipefail
     - *configure_multiarch_builder
     - *configure_docker_auth_pass
     - |
@@ -64,22 +121,14 @@ variables:
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
-    - oci='org.opencontainers.image'
-    - docker buildx build >-
-        --platform "${IMAGE_PLATFORMS}"
-        --tag "${CI_REGISTRY_IMAGE}"
-        --push
-        ${IMAGE_VENDOR:+--label "${oci}.vendor=${IMAGE_VENDOR}"}
-        ${IMAGE_TITLE:+--label "${oci}.title=${IMAGE_TITLE}"}
-        ${IMAGE_VERSION:+--label "${oci}.version=${IMAGE_VERSION}"}
-        ${IMAGE_CREATED:+--label "${oci}.created=${IMAGE_CREATED}"}
-        ${IMAGE_AUTHORS:+--label "${oci}.authors=${IMAGE_AUTHORS}"}
-        ${IMAGE_URL:+--label "${oci}.url=${IMAGE_URL}"}
-        ${IMAGE_DOCUMENTATION:+--label "${oci}.documentation=${IMAGE_DOCUMENTATION}"}
-        ${IMAGE_REVISION:+--label "${oci}.revision=${IMAGE_REVISION}"}
-        ${IMAGE_LICENSES:+--label "${oci}.licenses=${IMAGE_LICENSES}"}
-        ${IMAGE_REF_NAME:+--label "${oci}.ref.name=${IMAGE_REF_NAME}"}
-        ${IMAGE_DESCRIPTION:+--label "${oci}.description=${IMAGE_DESCRIPTION}"}
-        "${BUILD_CONTEXT}"
+    - |
+      {
+        printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
+        printf "\0%s" "--push"
+        [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0%s" "--tag"   "$(cat {})"' \;
+        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0%s" "--label" "$(cat {})"' \;
+        printf "\0%s" "${BUILD_CONTEXT}"
+      } | xargs -0 sh -c 'docker buildx build "${@}"'
   after_script:
     - docker logout
