@@ -126,7 +126,7 @@ default:
   script:
     - |
       {
-        printf "\0%s" "--platform"  "${IMAGE_PLATFORMS}"
+        printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
         printf "\0%s" "--push"
         [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
         [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0%s" "--tag"   "$(cat {})"' \;
