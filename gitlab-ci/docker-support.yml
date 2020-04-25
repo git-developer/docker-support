@@ -105,7 +105,7 @@ default:
       {
         printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
         printf "\0%s" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
-        printf "\0%s" "--tag" "${CI_PROJECT_PATH_SLUG}:${BUILD_CACHE}"
+        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
         printf "\0%s" "${BUILD_CONTEXT}"
       } | xargs -0 sh -c 'docker buildx build "${@}"'
@@ -122,7 +122,7 @@ default:
       {
         printf "\0%s" "--load"
         [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
-        printf "\0%s" "--tag" "${CI_PROJECT_PATH_SLUG}:${BUILD_CACHE}"
+        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
         printf "\0%s" "${BUILD_CONTEXT}"
       } | xargs -0 sh -c 'docker buildx build "${@}"'
