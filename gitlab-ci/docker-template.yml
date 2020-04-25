@@ -17,6 +17,10 @@ Collect Labels:
   extends: .docker_support:.collect_labels
   stage: prepare
 
+Collect Build Arguments:
+  extends: .docker_support:.collect_build_args
+  stage: prepare
+
 Build Image:
   extends: .docker_support:.build_bare_image
   stage: prepare

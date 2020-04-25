@@ -79,6 +79,17 @@ default:
     paths:
     - labels
 
+.docker_support:.collect_build_args:
+  image: "alpine"
+  before_script:
+  - set -euo pipefail
+  script:
+  - mkdir -p build-args
+  - for build_arg in "${BUILD_ARGS-}"; do echo >"build-args/${build_arg%=*}" "${build_arg}"; done
+  artifacts:
+    paths:
+    - build-args
+
 .docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
   services:
@@ -90,11 +101,14 @@ default:
     - set -euo pipefail
     - *configure_multiarch_builder
   script:
-    - docker buildx build >-
-        --cache-to "type=local,dest=${BUILD_CACHE},mode=max"
-        --platform "${IMAGE_PLATFORMS}"
-        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
-        "${BUILD_CONTEXT}"
+    - |
+      {
+        printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
+        printf "\0%s" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
+        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
+        printf "\0%s" "${BUILD_CONTEXT}"
+      } | xargs -0 sh -c 'docker buildx build "${@}"'
   artifacts:
     paths:
     - "${BUILD_CACHE}"
@@ -104,11 +118,14 @@ default:
   before_script:
     - set -euo pipefail
     - *configure_multiarch_builder
-    - docker buildx build >-
-        --cache-from "type=local,src=${BUILD_CACHE}"
-        --load
-        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
-        "${BUILD_CONTEXT}"
+    - |
+      {
+        printf "\0%s" "--load"
+        [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
+        printf "\0%s" "${BUILD_CONTEXT}"
+      } | xargs -0 sh -c 'docker buildx build "${@}"'
 
 .docker_support:.publish_image:
   extends: .docker_support:.base
@@ -126,8 +143,9 @@ default:
         printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
         printf "\0%s" "--push"
         [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
-        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0%s" "--tag"   "$(cat {})"' \;
-        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0%s" "--label" "$(cat {})"' \;
+        [ ! -d ./tags       ] || find ./tags       -type f -exec sh -c 'printf "\0%s" "--tag"       "$(cat {})"' \;
+        [ ! -d ./labels     ] || find ./labels     -type f -exec sh -c 'printf "\0%s" "--label"     "$(cat {})"' \;
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
         printf "\0%s" "${BUILD_CONTEXT}"
       } | xargs -0 sh -c 'docker buildx build "${@}"'
   after_script:
