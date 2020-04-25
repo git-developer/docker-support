@@ -56,6 +56,7 @@ default:
   - set -euo pipefail
   script:
   - apk add wget jq coreutils
+  - echo wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes"
   - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
   - owner_url="$(value_of .namespace.web_url)"
@@ -85,7 +86,7 @@ default:
   - set -euo pipefail
   script:
   - mkdir -p build-args
-  - for build_arg in "${BUILD_ARGS-}"; do echo >"build-args/${build_arg%=*}" "${build_arg}"; done
+  - test -z "${BUILD_ARGS-}" || for build_arg in "${BUILD_ARGS}"; do echo >"build-args/${build_arg%=*}" "${build_arg}"; done
   artifacts:
     paths:
     - build-args
