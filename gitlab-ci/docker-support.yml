@@ -56,7 +56,6 @@ default:
   - set -euo pipefail
   script:
   - apk add wget jq coreutils
-  - echo wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes"
   - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
   - owner_url="$(value_of .namespace.web_url)"
@@ -106,7 +105,7 @@ default:
       {
         printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
         printf "\0%s" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
-        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        printf "\0%s" "--tag" "${CI_PROJECT_PATH_SLUG}:${BUILD_CACHE}"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
         printf "\0%s" "${BUILD_CONTEXT}"
       } | xargs -0 sh -c 'docker buildx build "${@}"'
@@ -123,7 +122,7 @@ default:
       {
         printf "\0%s" "--load"
         [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
-        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        printf "\0%s" "--tag" "${CI_PROJECT_PATH_SLUG}:${BUILD_CACHE}"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
         printf "\0%s" "${BUILD_CONTEXT}"
       } | xargs -0 sh -c 'docker buildx build "${@}"'
