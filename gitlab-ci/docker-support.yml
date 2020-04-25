@@ -1,5 +1,6 @@
 variables:
   BUILD_CONTEXT: "."
+  IMAGE_NAME: "${CI_PROJECT_PATH}"
   IMAGE_VERSION: "latest"
   IMAGE_PLATFORMS: "linux/amd64"
   DOCKER_VERSION: "19.03.8"
@@ -62,7 +63,7 @@ default:
   - oci='org.opencontainers.image'
   - mkdir -p labels
   - echo >"labels/${oci}.vendor"   "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
-  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"
+  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${IMAGE_NAME}:${IMAGE_VERSION}}"
   - echo >"labels/${oci}.version"  "${oci}.version=${IMAGE_VERSION}"
   - echo >"labels/${oci}.created"  "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
   - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
@@ -105,7 +106,7 @@ default:
       {
         printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
         printf "\0%s" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
-        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        printf "\0%s" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
         printf "\0%s" "${BUILD_CONTEXT}"
       } | xargs -0 sh -c 'docker buildx build "${@}"'
@@ -122,7 +123,7 @@ default:
       {
         printf "\0%s" "--load"
         [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
-        printf "\0%s" "--tag" "${CI_PROJECT_PATH}:${BUILD_CACHE}"
+        printf "\0%s" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
         printf "\0%s" "${BUILD_CONTEXT}"
       } | xargs -0 sh -c 'docker buildx build "${@}"'
