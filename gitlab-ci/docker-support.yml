@@ -45,11 +45,11 @@ default:
   before_script:
   - set -euo pipefail
   script:
-  - mkdir -p tags/core
-  - echo >"tags/core/${IMAGE_VERSION}" "${CI_REGISTRY_IMAGE}"
+  - mkdir -p tags
+  - echo >"tags/${IMAGE_VERSION}" "${CI_REGISTRY_IMAGE}"
   artifacts:
     paths:
-    - tags/core/*
+    - tags/*
 
 .docker_support:.collect_labels:
   image: "alpine"
