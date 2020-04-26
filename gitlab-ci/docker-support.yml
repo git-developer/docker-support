@@ -49,7 +49,7 @@ default:
   - echo >"tags/${IMAGE_VERSION}" "${CI_REGISTRY_IMAGE}"
   artifacts:
     paths:
-    - tags/*
+    - tags
 
 .docker_support:.collect_labels:
   image: "alpine"
@@ -78,7 +78,7 @@ default:
   - if [ -n "${IMAGE_DESCRIPTION}" ]; then echo >"labels/${oci}.description" "${oci}.description=${IMAGE_DESCRIPTION}"; fi
   artifacts:
     paths:
-    - labels/*
+    - labels
 
 .docker_support:.collect_build_args:
   image: "alpine"
@@ -89,7 +89,7 @@ default:
   - test -z "${BUILD_ARGS-}" || for build_arg in "${BUILD_ARGS}"; do echo >"build-args/${build_arg%%=*}" "${build_arg}"; done
   artifacts:
     paths:
-    - build-args/*
+    - build-args
 
 .docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
