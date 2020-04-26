@@ -86,7 +86,7 @@ default:
   - set -euo pipefail
   script:
   - mkdir -p build-args
-  - test -z "${BUILD_ARGS-}" || for build_arg in ${BUILD_ARGS}; do echo >"build-args/${build_arg%%=*}" "${build_arg}"; done
+  - test -z "${BUILD_ARGS-}" || for build_arg in "$(echo "${BUILD_ARGS}" | tr ' ' '\n')"; do echo >"build-args/${build_arg%%=*}" "${build_arg}"; done
   artifacts:
     paths:
     - build-args
