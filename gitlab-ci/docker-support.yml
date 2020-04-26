@@ -46,7 +46,7 @@ default:
   - set -euo pipefail
   script:
   - mkdir -p tags
-  - echo >"tags/${IMAGE_VERSION}" "${CI_REGISTRY_IMAGE}"
+  - echo >"tags/${IMAGE_VERSION}" "${IMAGE_NAME}:${IMAGE_VERSION}"
   artifacts:
     paths:
     - tags
