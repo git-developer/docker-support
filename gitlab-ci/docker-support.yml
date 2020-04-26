@@ -63,7 +63,7 @@ default:
   - oci='org.opencontainers.image'
   - mkdir -p labels
   - echo >"labels/${oci}.vendor"   "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
-  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${IMAGE_NAME}:${IMAGE_VERSION}}"
+  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${IMAGE_NAME##*/}}"
   - echo >"labels/${oci}.version"  "${oci}.version=${IMAGE_VERSION}"
   - echo >"labels/${oci}.created"  "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
   - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
