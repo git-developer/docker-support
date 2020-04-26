@@ -58,15 +58,16 @@ default:
   script:
   - apk add wget jq coreutils
   - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
+  - gitlab_users_metadata="$(  wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}/users")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
-  - owner_url="$(value_of .namespace.web_url)"
+  - authors="$(printf "%s" "${gitlab_users_metadata}" | jq -r '. | map((.name // empty) + if .web_url != null then " ("+.web_url+")" else "" end) | join(", ")')"
   - oci='org.opencontainers.image'
   - mkdir -p labels
   - echo >"labels/${oci}.vendor"   "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
   - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${IMAGE_NAME##*/}}"
   - echo >"labels/${oci}.version"  "${oci}.version=${IMAGE_VERSION}"
   - echo >"labels/${oci}.created"  "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
-  - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
+  - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${authors}}"
   - echo >"labels/${oci}.url"      "${oci}.url=${IMAGE_URL:-${CI_PROJECT_URL}}"
   - echo >"labels/${oci}.revision" "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"
   - echo >"labels/${oci}.ref.name" "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"
