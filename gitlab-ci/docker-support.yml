@@ -105,12 +105,12 @@ default:
   script:
     - |
       {
-        printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
-        printf "\0%s" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
-        printf "\0%s" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
-        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
-        printf "\0%s" "${BUILD_CONTEXT}"
-      } | xargs -0 sh -c 'docker buildx build "${@}"'
+        printf "%s\0" "--platform" "${IMAGE_PLATFORMS}"
+        printf "%s\0" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
+        printf "%s\0" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
+        printf "%s\0" "${BUILD_CONTEXT}"
+      } | xargs -0 docker buildx build
   artifacts:
     paths:
     - "${BUILD_CACHE}"
@@ -122,13 +122,13 @@ default:
     - *configure_multiarch_builder
     - |
       {
-        printf "\0%s" "--platform" "${IMAGE_PLATFORMS%%,*}"
-        printf "\0%s" "--load"
-        [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
-        printf "\0%s" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
-        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
-        printf "\0%s" "${BUILD_CONTEXT}"
-      } | xargs -0 sh -c 'docker buildx build "${@}"'
+        printf "%s\0" "--platform" "${IMAGE_PLATFORMS%%,*}"
+        printf "%s\0" "--load"
+        [ ! -d "${BUILD_CACHE}" ] || printf "%s\0" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        printf "%s\0" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
+        printf "%s\0" "${BUILD_CONTEXT}"
+      } | xargs -0 docker buildx build
 
 .docker_support:.publish_image:
   extends: .docker_support:.base
@@ -143,13 +143,13 @@ default:
   script:
     - |
       {
-        printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
-        printf "\0%s" "--push"
-        [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
-        [ ! -d ./tags       ] || find ./tags       -type f -exec sh -c 'printf "\0%s" "--tag"       "$(cat {})"' \;
-        [ ! -d ./labels     ] || find ./labels     -type f -exec sh -c 'printf "\0%s" "--label"     "$(cat {})"' \;
-        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "\0%s" "--build-arg" "$(cat {})"' \;
-        printf "\0%s" "${BUILD_CONTEXT}"
-      } | xargs -0 sh -c 'docker buildx build "${@}"'
+        printf "%s\0" "--platform" "${IMAGE_PLATFORMS}"
+        printf "%s\0" "--push"
+        [ ! -d "${BUILD_CACHE}" ] || printf "%s\0" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        [ ! -d ./tags       ] || find ./tags       -type f -exec sh -c 'printf "%s\0" "--tag"       "$(cat {})"' \;
+        [ ! -d ./labels     ] || find ./labels     -type f -exec sh -c 'printf "%s\0" "--label"     "$(cat {})"' \;
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
+        printf "%s\0" "${BUILD_CONTEXT}"
+      } | xargs -0 docker buildx build
   after_script:
     - docker logout
