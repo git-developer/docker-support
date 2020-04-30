@@ -3,19 +3,26 @@ variables:
   IMAGE_PLATFORMS:    linux/amd64,linux/arm/v7
 
 include:
-  remote: "https://github.com/git-developer/docker-support/raw/v2.0.0/gitlab-ci/docker-support.yml"
+  remote: "https://github.com/git-developer/docker-support/raw/v2.1.0/gitlab-ci/docker-support.yml"
 
 stages:
+  - setup
   - prepare
   - publish
+
+Collect Build Arguments:
+  extends: .docker_support:.collect_build_args
+  stage: setup
 
 Collect Tags:
   extends: .docker_support:.collect_tags
   stage: prepare
+  dependencies: []
 
 Collect Labels:
   extends: .docker_support:.collect_labels
   stage: prepare
+  dependencies: []
 
 Build Image:
   extends: .docker_support:.build_bare_image
