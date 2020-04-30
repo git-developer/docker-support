@@ -1,5 +1,6 @@
 variables:
   BUILD_CONTEXT: "."
+  IMAGE_NAME: "${CI_PROJECT_PATH}"
   IMAGE_VERSION: "latest"
   IMAGE_PLATFORMS: "linux/amd64"
   DOCKER_VERSION: "19.03.8"
@@ -45,7 +46,7 @@ default:
   - set -euo pipefail
   script:
   - mkdir -p tags
-  - echo >"tags/${IMAGE_VERSION}" "${CI_REGISTRY_IMAGE}"
+  - echo >"tags/${IMAGE_VERSION}" "${IMAGE_NAME}:${IMAGE_VERSION}"
   artifacts:
     paths:
     - tags
@@ -57,15 +58,16 @@ default:
   script:
   - apk add wget jq coreutils
   - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
+  - gitlab_users_metadata="$(  wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}/users")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
-  - owner_url="$(value_of .namespace.web_url)"
+  - authors="$(printf "%s" "${gitlab_users_metadata}" | jq -r '. | map((.name // empty) + if .web_url != null then " ("+.web_url+")" else "" end) | join(", ")')"
   - oci='org.opencontainers.image'
   - mkdir -p labels
   - echo >"labels/${oci}.vendor"   "${oci}.vendor=${IMAGE_VENDOR:-${CI_PROJECT_NAMESPACE}}"
-  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${CI_PROJECT_PATH}:${IMAGE_VERSION}}"
+  - echo >"labels/${oci}.title"    "${oci}.title=${IMAGE_TITLE:-${IMAGE_NAME##*/}}"
   - echo >"labels/${oci}.version"  "${oci}.version=${IMAGE_VERSION}"
   - echo >"labels/${oci}.created"  "${oci}.created=${IMAGE_CREATED:-$(date -u --rfc-3339 seconds)}"
-  - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${GITLAB_USER_LOGIN}${owner_url:+ <${owner_url}>}}"
+  - echo >"labels/${oci}.authors"  "${oci}.authors=${IMAGE_AUTHORS:-${authors}}"
   - echo >"labels/${oci}.url"      "${oci}.url=${IMAGE_URL:-${CI_PROJECT_URL}}"
   - echo >"labels/${oci}.revision" "${oci}.revision=${IMAGE_REVISION:-${CI_COMMIT_SHA}}"
   - echo >"labels/${oci}.ref.name" "${oci}.ref.name=${IMAGE_REF_NAME:-${CI_COMMIT_REF_NAME}}"
@@ -79,6 +81,17 @@ default:
     paths:
     - labels
 
+.docker_support:.collect_build_args:
+  image: "alpine"
+  before_script:
+  - set -euo pipefail
+  script:
+  - mkdir -p build-args
+  - echo "${BUILD_ARGS-}" | tr ' ' '\n' | while read build_arg; do [ -z "${build_arg}" ] || echo >"build-args/${build_arg%%=*}" "${build_arg}"; done
+  artifacts:
+    paths:
+    - build-args
+
 .docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
   services:
@@ -90,11 +103,14 @@ default:
     - set -euo pipefail
     - *configure_multiarch_builder
   script:
-    - docker buildx build >-
-        --cache-to "type=local,dest=${BUILD_CACHE},mode=max"
-        --platform "${IMAGE_PLATFORMS}"
-        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
-        "${BUILD_CONTEXT}"
+    - |
+      {
+        printf "%s\0" "--platform" "${IMAGE_PLATFORMS}"
+        printf "%s\0" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
+        printf "%s\0" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
+        printf "%s\0" "${BUILD_CONTEXT}"
+      } | xargs -0 docker buildx build
   artifacts:
     paths:
     - "${BUILD_CACHE}"
@@ -104,11 +120,15 @@ default:
   before_script:
     - set -euo pipefail
     - *configure_multiarch_builder
-    - docker buildx build >-
-        --cache-from "type=local,src=${BUILD_CACHE}"
-        --load
-        --tag "${CI_PROJECT_PATH}:${BUILD_CACHE}"
-        "${BUILD_CONTEXT}"
+    - |
+      {
+        printf "%s\0" "--platform" "${IMAGE_PLATFORMS%%,*}"
+        printf "%s\0" "--load"
+        [ ! -d "${BUILD_CACHE}" ] || printf "%s\0" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        printf "%s\0" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
+        printf "%s\0" "${BUILD_CONTEXT}"
+      } | xargs -0 docker buildx build
 
 .docker_support:.publish_image:
   extends: .docker_support:.base
@@ -123,12 +143,13 @@ default:
   script:
     - |
       {
-        printf "\0%s" "--platform" "${IMAGE_PLATFORMS}"
-        printf "\0%s" "--push"
-        [ ! -d "${BUILD_CACHE}" ] || printf "\0%s" "--cache-from" "type=local,src=${BUILD_CACHE}"
-        [ ! -d ./tags   ] || find ./tags   -type f -exec sh -c 'printf "\0%s" "--tag"   "$(cat {})"' \;
-        [ ! -d ./labels ] || find ./labels -type f -exec sh -c 'printf "\0%s" "--label" "$(cat {})"' \;
-        printf "\0%s" "${BUILD_CONTEXT}"
-      } | xargs -0 sh -c 'docker buildx build "${@}"'
+        printf "%s\0" "--platform" "${IMAGE_PLATFORMS}"
+        printf "%s\0" "--push"
+        [ ! -d "${BUILD_CACHE}" ] || printf "%s\0" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        [ ! -d ./tags       ] || find ./tags       -type f -exec sh -c 'printf "%s\0" "--tag"       "$(cat {})"' \;
+        [ ! -d ./labels     ] || find ./labels     -type f -exec sh -c 'printf "%s\0" "--label"     "$(cat {})"' \;
+        [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
+        printf "%s\0" "${BUILD_CONTEXT}"
+      } | xargs -0 docker buildx build
   after_script:
     - docker logout
