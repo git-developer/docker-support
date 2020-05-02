@@ -84,7 +84,7 @@ default:
 .docker_support:.collect_build_args:
   image: "alpine"
   rules:
-  - if: '${BUILD_ARGS}'
+  - if: '$BUILD_ARGS'
   before_script:
   - set -euo pipefail
   script:
