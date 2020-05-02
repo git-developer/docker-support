@@ -28,10 +28,10 @@ check_for_update:
     echo "Latest image: $(date --utc -I -d "@${image_date}")"
     if test "${app_date}" -gt "${image_date}"
     then
-      echo "Outdated (${message})"
+      echo "Outdated"
       touch trigger_build
     else
-      echo "Up-to-date (${message})"
+      echo "Up-to-date"
     fi
 
 trigger_build:
