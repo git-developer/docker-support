@@ -8,6 +8,7 @@ include:
 stages:
   - setup
   - prepare
+  - analyze
   - publish
 
 Collect Build Arguments:
