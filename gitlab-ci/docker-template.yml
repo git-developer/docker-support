@@ -6,29 +6,38 @@ include:
   remote: "https://github.com/git-developer/docker-support/raw/v2.1.0/gitlab-ci/docker-support.yml"
 
 stages:
-  - setup
-  - prepare
-  - analyze
-  - publish
+- post_checkout
+- pre_build
+- build
+- post_build
+- pre_test
+- test
+- post_test
+- pre_push
+- push
+- post_push
 
-Collect Build Arguments:
-  extends: .docker_support:.collect_build_args
-  stage: setup
-
-Collect Tags:
+prepare_tags:
   extends: .docker_support:.collect_tags
-  stage: prepare
+  stage: post_checkout
   dependencies: []
 
-Collect Labels:
+prepare_labels:
   extends: .docker_support:.collect_labels
-  stage: prepare
+  stage: post_checkout
   dependencies: []
 
-Build Image:
-  extends: .docker_support:.build_bare_image
-  stage: prepare
+prepare_build_arguments:
+  extends: .docker_support:.collect_build_args
+  stage: pre_build
+  dependencies: []
 
-Publish Image:
+build_image:
+  extends: .docker_support:.build_bare_image
+  stage: build
+  dependencies:
+  - prepare_build_arguments
+
+publish_image:
   extends: .docker_support:.publish_image
-  stage: publish
+  stage: push
