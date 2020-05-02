@@ -1,7 +1,7 @@
 variables:
   DOWNSTREAM_PROJECT: ""
+  DOCKER_REPOSITORY:  "${DOWNSTREAM_PROJECT}"
   APPLICATION_URL:    ""
-  DOCKER_REPOSITORY:  ""
 
 stages:
 - check
