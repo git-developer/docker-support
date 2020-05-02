@@ -17,19 +17,21 @@ check_for_update:
   - |
     set -euo pipefail
     apk add coreutils jq
+    echo "Docker repository: ${DOCKER_REPOSITORY}"
     case "${DOCKER_REPOSITORY}" in
       http*) repo_url="${DOCKER_REPOSITORY}" ;;
       *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
     esac
     app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' | xargs date +%s -d)"
     image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
-    message="Application: $(date --utc -I -d "@${app_date}"), latest image: $(date --utc -I -d "@${image_date}")"
+    echo "Application:  $(date --utc -I -d "@${app_date}")"
+    echo "Latest image: $(date --utc -I -d "@${image_date}")"
     if test "${app_date}" -gt "${image_date}"
     then
-      echo "${repo}: Outdated (${message})"
+      echo "Outdated (${message})"
       touch trigger_build
     else
-      echo "${repo}: Up-to-date (${message})"
+      echo "Up-to-date (${message})"
     fi
 
 trigger_build:
@@ -38,5 +40,5 @@ trigger_build:
   - exists:
     - trigger_build
   script:
-  - echo "trigger_build is run"
+  - echo "Triggering build of ${DOWNSTREAM_PROJECT}"
 #  trigger: "${DOWNSTREAM_PROJECT}"
