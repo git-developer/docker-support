@@ -48,7 +48,8 @@ check_for_update:
   - *load_app_date
   - *load_image_date
   script:
-  - echo "Docker repository: ${DOCKER_REPOSITORY}"
+  - |
+    echo "Docker repository: ${DOCKER_REPOSITORY}"
   - app_date=$(load_app_date)
   - image_date=$(load_image_date)
   - |
