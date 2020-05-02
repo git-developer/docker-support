@@ -43,7 +43,7 @@ check_for_update:
     - trigger_build
   before_script:
   - set -euo pipefail
-  - apk add coreutils jq
+  - apk add coreutils jq git
   - log() { echo >&2 "${@}"; }
   - *load_app_date
   - *load_image_date
