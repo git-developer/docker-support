@@ -51,7 +51,8 @@ check_for_update:
   - echo "Docker repository: ${DOCKER_REPOSITORY}"
   - app_date=$(load_app_date)
   - image_date=$(load_image_date)
-  - if [ "${app_date}" -gt "${image_date}" ]; then
+  - |
+    if [ "${app_date}" -gt "${image_date}" ]; then
       echo "Outdated"
       touch trigger_build
     else
