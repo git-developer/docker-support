@@ -7,27 +7,51 @@ stages:
 - check
 - trigger
 
+.check_for_update:.load_app_date: &load_app_date |
+  load_app_date() {
+    case "${APPLICATION_URL}" in
+      git*|*.git)
+        git clone -q --depth 1 "${APPLICATION_URL}" repo
+        app_date="$(git -C repo --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
+      http*)
+        app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' | xargs date +%s -d)" ;;
+      *)
+        log "Unsupported protocol for application URL '${APPLICATION_URL}'" ;;
+    esac
+    test -n "${app_date}" || { log "No date found for application URL '${app_url}'"; return 1; }
+    log "Application:  $(date --utc -I -d "@${app_date}")"
+    echo "${app_date}"
+  }
+
+.check_for_update:.load_image_date: &load_image_date |
+  load_image_date() {
+    case "${DOCKER_REPOSITORY}" in
+      http*) repo_url="${DOCKER_REPOSITORY}" ;;
+      *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
+    esac
+    image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
+    test -n "${image_date}" || { log "No date found for Docker image '${repo_url}'"; return 1; }
+    log "Latest image: $(date --utc -I -d "@${image_date}")"
+    echo "${image_date}"
+  }
+
 check_for_update:
   stage: check
   image: alpine
   artifacts:
     paths:
     - trigger_build
+  before_script:
+  - set -euo pipefail
+  - apk add coreutils jq
+  - log() { echo >&2 "${@}"; }
+  - *load_app_date
+  - *load_image_date
   script:
-  - |
-    set -euo pipefail
-    apk add coreutils jq
-    echo "Docker repository: ${DOCKER_REPOSITORY}"
-    case "${DOCKER_REPOSITORY}" in
-      http*) repo_url="${DOCKER_REPOSITORY}" ;;
-      *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
-    esac
-    app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' | xargs date +%s -d)"
-    image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
-    echo "Application:  $(date --utc -I -d "@${app_date}")"
-    echo "Latest image: $(date --utc -I -d "@${image_date}")"
-    if test "${app_date}" -gt "${image_date}"
-    then
+  - echo "Docker repository: ${DOCKER_REPOSITORY}"
+  - app_date=$(load_app_date)
+  - image_date=$(load_image_date)
+  - if [ "${app_date}" -gt "${image_date}" ]; then
       echo "Outdated"
       touch trigger_build
     else
