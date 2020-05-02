@@ -24,7 +24,7 @@ check_for_update:
     app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' | xargs date +%s -d)"
     image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
     message="Application: $(date --utc -I -d "@${app_date}"), latest image: $(date --utc -I -d "@${image_date}")"
-    if test "${app_date}" -gt "${image_date}" then
+    if test "${app_date}" -gt "${image_date}"; then
       echo "${repo}: Outdated (${message})"
       touch trigger_build
     else
