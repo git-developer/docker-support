@@ -66,6 +66,4 @@ trigger_build:
   rules:
   - exists:
     - trigger_build
-  script:
-  - echo "Triggering build of ${DOWNSTREAM_PROJECT}"
   trigger: "${DOWNSTREAM_PROJECT}"
