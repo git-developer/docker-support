@@ -3,7 +3,7 @@ variables:
   IMAGE_PLATFORMS:    linux/amd64,linux/arm/v7
 
 include:
-  remote: "https://github.com/git-developer/docker-support/raw/feature/trigger/gitlab-ci/docker-support.yml"
+  remote: "https://github.com/git-developer/docker-support/raw/feature/gitlab-ci/gitlab-ci/docker-support.yml"
 
 stages:
 - post_checkout
