@@ -8,6 +8,7 @@ variables:
   DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
   DOCKER_CLI_EXPERIMENTAL: "enabled"
   BUILD_CACHE: "build-cache"
+  UPDATE_CHECK: "false"
 
 default:
   artifacts:
@@ -40,7 +41,16 @@ default:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
+.docker_support:.build_job:
+  rules:
+  - if: $UPDATE_CHECK != "true"
+
+.docker_support:.update_job:
+  rules:
+  - if: $UPDATE_CHECK == "true"
+
 .docker_support:.collect_tags:
+  extends: .docker_support:.build_job
   image: "alpine"
   before_script:
   - set -euo pipefail
@@ -52,6 +62,7 @@ default:
     - tags
 
 .docker_support:.collect_labels:
+  extends: .docker_support:.build_job
   image: "alpine"
   before_script:
   - set -euo pipefail
@@ -82,9 +93,10 @@ default:
     - labels
 
 .docker_support:.collect_build_args:
+  extends: .docker_support:.build_job
   image: "alpine"
   rules:
-  - if: '$BUILD_ARGS'
+  - if: '$UPDATE_CHECK != "true" && $BUILD_ARGS'
   before_script:
   - set -euo pipefail
   script:
@@ -96,8 +108,9 @@ default:
 
 .docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
+  extends: .docker_support:.build_job
   services:
-    - name: "docker:${DOCKER_VERSION}-dind"
+  - name: "docker:${DOCKER_VERSION}-dind"
 
 .docker_support:.build_bare_image:
   extends: .docker_support:.base
@@ -157,12 +170,13 @@ default:
     - docker logout
 
 .docker_support:.trigger_on_update:
-  variables:
-    DOWNSTREAM_PROJECT: ""
-    DOWNSTREAM_REF:     "master"
-    DOCKER_REPOSITORY:  "${DOWNSTREAM_PROJECT}"
-    APPLICATION_URL:    ""
+  extends: .docker_support:.update_job
   image: alpine
+  variables:
+    DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
+    DOWNSTREAM_REF:     "${CI_COMMIT_REF_NAME}"
+    DOCKER_REPOSITORY:  "${DOWNSTREAM_PROJECT}"
+    APPLICATION_URL:    "${CI_REPOSITORY_URL}"
   before_script:
   - set -euo pipefail
   - apk add --no-cache coreutils jq git curl
@@ -211,10 +225,3 @@ default:
            --form "variables[UPDATE_CHECK]=true" \
            "${downstream_project_url}/trigger/pipeline"
     fi
-
-.docker_support:.trigger_self_on_update:
-  extends: .docker_support:.trigger_on_update:
-  variables:
-    DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
-    DOWNSTREAM_REF: "${CI_COMMIT_REF_NAME}"
-    DOCKER_REPOSITORY: "${CI_PROJECT_PATH}"

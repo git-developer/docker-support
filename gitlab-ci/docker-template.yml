@@ -17,6 +17,11 @@ stages:
 - push
 - post_push
 
+trigger_on_update:
+  extends: .docker_support:.trigger_on_update
+  stage: post_checkout
+  dependencies: []
+
 prepare_tags:
   extends: .docker_support:.collect_tags
   stage: post_checkout
