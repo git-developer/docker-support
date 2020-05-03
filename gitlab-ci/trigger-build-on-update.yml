@@ -43,7 +43,7 @@ check_for_update:
     - trigger_build
   before_script:
   - set -euo pipefail
-  - apk add coreutils jq git
+  - apk add coreutils jq git curl
   - log() { echo >&2 "${@}"; }
   - *load_app_date
   - *load_image_date
@@ -57,6 +57,8 @@ check_for_update:
     then
       echo "Outdated"
       touch trigger_build
+      downstream_project_id="$(echo "${DOWNSTREAM_PROJECT}" | sed 's:/:%2F:g')"
+      curl --request POST --form "token=${CI_JOB_TOKEN}" "${CI_SERVER_URL}/api/v4/projects/${downstream_project_id}/trigger/pipeline"
     else
       echo "Up-to-date"
     fi
@@ -64,6 +66,7 @@ check_for_update:
 trigger_build:
   stage: trigger
   rules:
+  # it seems that 'exists' works only for files in the repository, not for artifacts
   - exists:
     - trigger_build
   trigger: "${DOWNSTREAM_PROJECT}"
