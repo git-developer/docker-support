@@ -8,7 +8,12 @@ variables:
   DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
   DOCKER_CLI_EXPERIMENTAL: "enabled"
   BUILD_CACHE: "build-cache"
+
   PIPELINE_MODE: "build"
+  DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
+  DOWNSTREAM_REF:     "${CI_COMMIT_REF_NAME}"
+  DOCKER_REPOSITORY:  "${CI_PROJECT_PATH}"
+  APPLICATION_URL:    "${CI_REPOSITORY_URL}"
 
 default:
   artifacts:
@@ -232,11 +237,6 @@ default:
   rules:
   - if: '$PIPELINE_MODE == "update-check"'
   image: alpine
-  variables:
-    DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
-    DOWNSTREAM_REF:     "${CI_COMMIT_REF_NAME}"
-    DOCKER_REPOSITORY:  "${CI_PROJECT_PATH}"
-    APPLICATION_URL:    "${CI_REPOSITORY_URL}"
   before_script:
   - set -euo pipefail
   - apk add --no-cache coreutils jq git curl
