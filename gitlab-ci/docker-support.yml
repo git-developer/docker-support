@@ -187,8 +187,9 @@ default:
       log "Detecting application date from ${APPLICATION_URL}"
       case "${APPLICATION_URL}" in
         git*|*.git)
-          git clone -q --depth 1 "${APPLICATION_URL}" repo
-          app_date="$(git -C repo --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
+          repo="$(mktemp -d)"
+          git clone -q --depth 1 "${APPLICATION_URL}" "${repo}"
+          app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
         http*)
           app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 \
                       | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' \
@@ -220,7 +221,7 @@ default:
     image_date="$(detect_image_date)"
     if [ -z "${app_date}" ] || [ -z "${image_date}" ]; then
       log "An error occured while detecting dates."
-      return 1
+      exit 1
     elif [ "$(detect_app_date)" -le "$(detect_image_date)" ]; then
       log "Image is up-to-date."
     else
@@ -229,6 +230,5 @@ default:
       curl -sSL \
            --form "token=${CI_JOB_TOKEN}" \
            --form "ref=${DOWNSTREAM_REF}" \
-           --form "variables[UPDATE_CHECK]=true" \
            "${downstream_project_url}/trigger/pipeline"
     fi
