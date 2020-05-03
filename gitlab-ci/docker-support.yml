@@ -43,11 +43,11 @@ default:
 
 .docker_support:.build_job:
   rules:
-  - if: $UPDATE_CHECK != "true"
+  - if: '$UPDATE_CHECK != "true"'
 
 .docker_support:.update_job:
   rules:
-  - if: $UPDATE_CHECK == "true"
+  - if: '$UPDATE_CHECK == "true"'
 
 .docker_support:.collect_tags:
   extends: .docker_support:.build_job
@@ -173,10 +173,10 @@ default:
   extends: .docker_support:.update_job
   image: alpine
   variables:
-    DOWNSTREAM_PROJECT: "$CI_PROJECT_PATH"
-    DOWNSTREAM_REF:     "$CI_COMMIT_REF_NAME"
-    DOCKER_REPOSITORY:  "$DOWNSTREAM_PROJECT"
-    APPLICATION_URL:    "$CI_REPOSITORY_URL"
+    DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
+    DOWNSTREAM_REF:     "${CI_COMMIT_REF_NAME}"
+    DOCKER_REPOSITORY:  "${CI_PROJECT_PATH}"
+    APPLICATION_URL:    "${CI_REPOSITORY_URL}"
   before_script:
   - set -euo pipefail
   - apk add --no-cache coreutils jq git curl
