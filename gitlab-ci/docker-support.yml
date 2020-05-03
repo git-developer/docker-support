@@ -188,7 +188,7 @@ default:
       case "${APPLICATION_URL}" in
         git*|*.git)
           repo="$(mktemp -d)"
-          git clone -q --depth 1 "${APPLICATION_URL}" "${repo}"
+          git clone -q --depth 1 --branch "${DOWNSTREAM_REF}" "${APPLICATION_URL}" "${repo}"
           app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
         http*)
           app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 \
@@ -222,7 +222,7 @@ default:
     if [ -z "${app_date}" ] || [ -z "${image_date}" ]; then
       log "An error occured while detecting dates."
       exit 1
-    elif [ "$(detect_app_date)" -le "$(detect_image_date)" ]; then
+    elif [ "${app_date}" -le "${image_date}" ]; then
       log "Image is up-to-date."
     else
       log "Image is outdated. Triggering build of project '${DOWNSTREAM_PROJECT}' with ref '${DOWNSTREAM_REF}'."
