@@ -8,12 +8,15 @@ variables:
   DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.3"
   DOCKER_CLI_EXPERIMENTAL: "enabled"
   BUILD_CACHE: "build-cache"
-  UPDATE_CHECK: "false"
+  PIPELINE_MODE: "build"
 
 default:
   artifacts:
     expire_in: 1 hour
 
+##
+# Download and configure buildx for multiarch builds.
+##
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
   mkdir -p ~/.docker/cli-plugins
@@ -21,6 +24,15 @@ default:
   chmod +x ~/.docker/cli-plugins/docker-buildx
   docker buildx create --use --name builder
 
+##
+# Download and configure the docker credential helper for 'pass'.
+#
+# This job initializes a password store with the passphrase $GPG_PASSPHRASE
+# or a random password as fallback. The password store will be used to store
+# the credentials to the image registry.
+# Without a credential helper, the credentials to the docker registry are
+# stored in a plain text file.
+##
 .docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
   wget -q -O - "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}-amd64.tar.gz" | tar -C /usr/bin -xz
   chmod +x /usr/bin/docker-credential-pass
@@ -41,14 +53,17 @@ default:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
+##
+# Base job for build jobs (in contrast to the update-check job
+# '.docker_support:.trigger_on_update:').
+##
 .docker_support:.build_job:
   rules:
-  - if: '$UPDATE_CHECK != "true"'
+  - if: '$PIPELINE_MODE == "build"'
 
-.docker_support:.update_job:
-  rules:
-  - if: '$UPDATE_CHECK == "true"'
-
+##
+# Write default tags to the tags directory.
+##
 .docker_support:.collect_tags:
   extends: .docker_support:.build_job
   image: "alpine"
@@ -61,6 +76,12 @@ default:
     paths:
     - tags
 
+##
+# Write default labels to the labels directory.
+#
+# Default labels are created for the OCI defined annotations.
+# Metadata is taken from pre-defined project variables and the GitLab API.
+##
 .docker_support:.collect_labels:
   extends: .docker_support:.build_job
   image: "alpine"
@@ -92,11 +113,14 @@ default:
     paths:
     - labels
 
+##
+# Write buid arguments to the build-args directory.
+##
 .docker_support:.collect_build_args:
   extends: .docker_support:.build_job
   image: "alpine"
   rules:
-  - if: '$UPDATE_CHECK != "true" && $BUILD_ARGS'
+  - if: '$PIPELINE_MODE == "build" && $BUILD_ARGS'
   before_script:
   - set -euo pipefail
   script:
@@ -106,12 +130,19 @@ default:
     paths:
     - build-args
 
+##
+# Base job for build jobs using Docker-in-Docker
+##
 .docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
   extends: .docker_support:.build_job
   services:
   - name: "docker:${DOCKER_VERSION}-dind"
 
+##
+# Build the bare docker image without tags and labels
+# and store it in the build cache.
+##
 .docker_support:.build_bare_image:
   extends: .docker_support:.base
   before_script:
@@ -130,6 +161,11 @@ default:
     paths:
     - "${BUILD_CACHE}"
 
+##
+# Base job for jobs that use the bare image,
+# e.g. to analyze it and create additional tags from
+# the application version.
+##
 .docker_support:.with_bare_image:
   extends: .docker_support:.base
   before_script:
@@ -145,6 +181,11 @@ default:
         printf "%s\0" "${BUILD_CONTEXT}"
       } | xargs -0 docker buildx build
 
+##
+# Read the bare image, add alls tags and labels and push it to the registry.
+# The default registry may be overriden by GitLab variables
+# CI_REGISTRY, CI_REGISTRY_USER and CI_REGISTRY_PASSWORD.
+##
 .docker_support:.publish_image:
   extends: .docker_support:.base
   before_script:
@@ -169,8 +210,27 @@ default:
   after_script:
     - docker logout
 
+##
+# Check if an update is available. If so, trigger a build.
+#
+# - To activate this job, set variable PIPELINE_MODE to 'update-check'.
+# - The variable APPLICATION_URL is used to check the application date;
+#   the URL may point to a git repository or HTTP resource.
+# - The variable DOCKER_REPOSITORY is used to check the Docker image date;
+#   it may either contain an URL to an image in a Docker registry or the
+#   name of an image on Docker Hub (e.g. 'owner/example-image').
+# - If the image is outdated, a pipeline for $DOWNSTREAM_PROJECT on branch
+#   $DOWNSTREAM_REF is triggered. Project and branch default to the current
+#   environment, so that by default the current project is build.
+#
+# This job is designed for projects that download and build an application
+# hosted externally. To automatically build a project when the external
+# application is updated, create a GitLab schedule with an interval of your
+# choice and set the variable PIPELINE_MODE to 'update-check'.
+##
 .docker_support:.trigger_on_update:
-  extends: .docker_support:.update_job
+  rules:
+  - if: '$PIPELINE_MODE == "update-check"'
   image: alpine
   variables:
     DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
@@ -186,7 +246,8 @@ default:
       set -euo pipefail
       case "${APPLICATION_URL}" in
         git*|*.git)
-          log "Detecting application date from latest commit in branch '${DOWNSTREAM_REF}' of git repository ${APPLICATION_URL}"
+          log "Detecting application date from latest commit" \
+              " in branch '${DOWNSTREAM_REF}' of git repository ${APPLICATION_URL}"
           repo="$(mktemp -d)"
           git clone -q --depth 1 --branch "${DOWNSTREAM_REF}" "${APPLICATION_URL}" "${repo}"
           app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
