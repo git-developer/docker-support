@@ -173,16 +173,17 @@ default:
   extends: .docker_support:.update_job
   image: alpine
   variables:
-    DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
-    DOWNSTREAM_REF:     "${CI_COMMIT_REF_NAME}"
-    DOCKER_REPOSITORY:  "${DOWNSTREAM_PROJECT}"
-    APPLICATION_URL:    "${CI_REPOSITORY_URL}"
+    DOWNSTREAM_PROJECT: "$CI_PROJECT_PATH"
+    DOWNSTREAM_REF:     "$CI_COMMIT_REF_NAME"
+    DOCKER_REPOSITORY:  "$DOWNSTREAM_PROJECT"
+    APPLICATION_URL:    "$CI_REPOSITORY_URL"
   before_script:
   - set -euo pipefail
   - apk add --no-cache coreutils jq git curl
   - log() { echo >&2 "${@}"; }
   - |
     detect_app_date() {
+      set -euo pipefail
       log "Detecting application date from ${APPLICATION_URL}"
       case "${APPLICATION_URL}" in
         git*|*.git)
@@ -201,6 +202,7 @@ default:
     }
   - |
     detect_image_date() {
+      set -euo pipefail
       case "${DOCKER_REPOSITORY}" in
         http*) repo_url="${DOCKER_REPOSITORY}" ;;
         *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
@@ -214,7 +216,12 @@ default:
   script:
   - |
     echo "Docker repository: ${DOCKER_REPOSITORY}"
-    if [ "$(detect_app_date)" -le "$(detect_image_date)" ]; then
+    app_date="$(detect_app_date)"
+    image_date="$(detect_image_date)"
+    if [ -z "${app_date}" ] || [ -z "${image_date}" ]; then
+      log "An error occured while detecting dates."
+      return 1
+    elif [ "$(detect_app_date)" -le "$(detect_image_date)" ]; then
       log "Image is up-to-date."
     else
       log "Image is outdated. Triggering build of project '${DOWNSTREAM_PROJECT}' with ref '${DOWNSTREAM_REF}'."
