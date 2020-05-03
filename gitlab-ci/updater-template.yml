@@ -1,0 +1,60 @@
+variables:
+  BUILD_CONTEXT:      image
+  IMAGE_PLATFORMS:    linux/amd64,linux/arm/v7
+
+include:
+  remote: "https://github.com/git-developer/docker-support/raw/feature/gitlab-ci/gitlab-ci/docker-support.yml"
+
+stages:
+- post_checkout
+- pre_build
+- build
+- post_build
+- pre_test
+- test
+- post_test
+- pre_push
+- push
+- post_push
+
+trigger_on_update:
+  extends: .docker_support:.trigger_self_on_update
+  stage: post_checkout
+  rules:
+    - if: $UPDATE_CHECK == "true"
+  dependencies: []
+
+prepare_tags:
+  extends: .docker_support:.collect_tags
+  stage: post_checkout
+  rules:
+    - if: $UPDATE_CHECK != "true"
+  dependencies: []
+
+prepare_labels:
+  extends: .docker_support:.collect_labels
+  stage: post_checkout
+  rules:
+    - if: $UPDATE_CHECK != "true"
+  dependencies: []
+
+prepare_build_arguments:
+  extends: .docker_support:.collect_build_args
+  stage: pre_build
+  rules:
+    - if: $UPDATE_CHECK != "true"
+  dependencies: []
+
+build_image:
+  extends: .docker_support:.build_bare_image
+  stage: build
+  rules:
+    - if: $UPDATE_CHECK != "true"
+  dependencies:
+  - prepare_build_arguments
+
+publish_image:
+  extends: .docker_support:.publish_image
+  stage: push
+  rules:
+    - if: $UPDATE_CHECK != "true"

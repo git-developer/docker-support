@@ -155,3 +155,66 @@ default:
       } | xargs -0 docker buildx build
   after_script:
     - docker logout
+
+.docker_support:.trigger_on_update:
+  variables:
+    DOWNSTREAM_PROJECT: ""
+    DOWNSTREAM_REF:     "master"
+    DOCKER_REPOSITORY:  "${DOWNSTREAM_PROJECT}"
+    APPLICATION_URL:    ""
+  image: alpine
+  before_script:
+  - set -euo pipefail
+  - apk add --no-cache coreutils jq git curl
+  - log() { echo >&2 "${@}"; }
+  - |
+    detect_app_date() {
+      log "Detecting application date from ${APPLICATION_URL}"
+      case "${APPLICATION_URL}" in
+        git*|*.git)
+          git clone -q --depth 1 "${APPLICATION_URL}" repo
+          app_date="$(git -C repo --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
+        http*)
+          app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 \
+                      | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' \
+                      | xargs date +%s -d)" ;;
+        *)
+          log "Unsupported protocol for application URL '${APPLICATION_URL}'" ;;
+      esac
+      test -n "${app_date}" || { log "No date found for application URL '${app_url}'"; return 1; }
+      log "Application:  $(date --utc -Iseconds -d "@${app_date}")"
+      echo "${app_date}"
+    }
+  - |
+    detect_image_date() {
+      case "${DOCKER_REPOSITORY}" in
+        http*) repo_url="${DOCKER_REPOSITORY}" ;;
+        *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
+      esac
+      log "Detecting image date from Docker repository ${repo_url}"
+      image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
+      test -n "${image_date}" || { log "No date found for Docker image '${repo_url}'"; return 1; }
+      log "Latest image: $(date --utc -Iseconds -d "@${image_date}")"
+      echo "${image_date}"
+    }
+  script:
+  - |
+    echo "Docker repository: ${DOCKER_REPOSITORY}"
+    if [ "$(detect_app_date)" -le "$(detect_image_date)" ]; then
+      log "Image is up-to-date."
+    else
+      log "Image is outdated. Triggering build of project '${DOWNSTREAM_PROJECT}' with ref '${DOWNSTREAM_REF}'."
+      downstream_project_url="${CI_SERVER_URL}/api/v4/projects/$(jq -nr --arg v "${DOWNSTREAM_PROJECT}" '$v|@uri')"
+      curl -sSL \
+           --form "token=${CI_JOB_TOKEN}" \
+           --form "ref=${DOWNSTREAM_REF}" \
+           --form "variables[UPDATE_CHECK]=true" \
+           "${downstream_project_url}/trigger/pipeline"
+    fi
+
+.docker_support:.trigger_self_on_update:
+  extends: .docker_support:.trigger_on_update:
+  variables:
+    DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
+    DOWNSTREAM_REF: "${CI_COMMIT_REF_NAME}"
+    DOCKER_REPOSITORY: "${CI_PROJECT_PATH}"
