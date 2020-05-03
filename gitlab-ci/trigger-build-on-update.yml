@@ -1,5 +1,6 @@
 variables:
   DOWNSTREAM_PROJECT: ""
+  DOWNSTREAM_REF:     "master"
   DOCKER_REPOSITORY:  "${DOWNSTREAM_PROJECT}"
   APPLICATION_URL:    ""
 
@@ -57,8 +58,8 @@ check_for_update:
     then
       echo "Outdated"
       touch trigger_build
-      downstream_project_id="$(echo "${DOWNSTREAM_PROJECT}" | sed 's:/:%2F:g')"
-      curl --request POST --form "token=${CI_JOB_TOKEN}" "${CI_SERVER_URL}/api/v4/projects/${downstream_project_id}/trigger/pipeline"
+      downstream_project_id="$(jq -nr --arg v "${DOWNSTREAM_PROJECT}" '$v|@uri')"
+      curl -sSL --request POST --form "token=${CI_JOB_TOKEN}" --form "ref=${DOWNSTREAM_REF}" "${CI_SERVER_URL}/api/v4/projects/${downstream_project_id}/trigger/pipeline"
     else
       echo "Up-to-date"
     fi
