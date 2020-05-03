@@ -57,8 +57,8 @@ default:
   - set -euo pipefail
   script:
   - apk add wget jq coreutils
-  - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
-  - gitlab_users_metadata="$(  wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}/users")"
+  - gitlab_project_metadata="$(wget -q -O - "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}?license=yes")"
+  - gitlab_users_metadata="$(  wget -q -O - "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/users")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
   - authors="$(printf "%s" "${gitlab_users_metadata}" | jq -r '. | map((.name // empty) + if .web_url != null then " ("+.web_url+")" else "" end) | join(", ")')"
   - oci='org.opencontainers.image'
@@ -204,7 +204,7 @@ default:
       log "Image is up-to-date."
     else
       log "Image is outdated. Triggering build of project '${DOWNSTREAM_PROJECT}' with ref '${DOWNSTREAM_REF}'."
-      downstream_project_url="${CI_SERVER_URL}/api/v4/projects/$(jq -nr --arg v "${DOWNSTREAM_PROJECT}" '$v|@uri')"
+      downstream_project_url="${CI_API_V4_URL}/projects/$(jq -nr --arg v "${DOWNSTREAM_PROJECT}" '$v|@uri')"
       curl -sSL \
            --form "token=${CI_JOB_TOKEN}" \
            --form "ref=${DOWNSTREAM_REF}" \
