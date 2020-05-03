@@ -184,20 +184,24 @@ default:
   - |
     detect_app_date() {
       set -euo pipefail
-      log "Detecting application date from ${APPLICATION_URL}"
       case "${APPLICATION_URL}" in
         git*|*.git)
+          log "Detecting application date from latest commit in branch '${DOWNSTREAM_REF}' of git repository ${APPLICATION_URL}"
           repo="$(mktemp -d)"
           git clone -q --depth 1 --branch "${DOWNSTREAM_REF}" "${APPLICATION_URL}" "${repo}"
           app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
         http*)
+          log "Detecting application date from last modification of ${APPLICATION_URL}"
           app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 \
                       | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' \
                       | xargs date +%s -d)" ;;
         *)
           log "Unsupported protocol for application URL '${APPLICATION_URL}'" ;;
       esac
-      test -n "${app_date}" || { log "No date found for application URL '${app_url}'"; return 1; }
+      if [ -z "${app_date}" ]; then
+        log "No date found for application URL '${APPLICATION_URL}'"
+        return 1
+      fi
       log "Application:  $(date --utc -Iseconds -d "@${app_date}")"
       echo "${app_date}"
     }
@@ -210,7 +214,10 @@ default:
       esac
       log "Detecting image date from Docker repository ${repo_url}"
       image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
-      test -n "${image_date}" || { log "No date found for Docker image '${repo_url}'"; return 1; }
+      if [ -z "${image_date}" ]; then
+        log "No date found for Docker image '${repo_url}'"
+        return 1
+      fi
       log "Latest image: $(date --utc -Iseconds -d "@${image_date}")"
       echo "${image_date}"
     }
