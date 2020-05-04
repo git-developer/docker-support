@@ -216,11 +216,79 @@ default:
     - docker logout
 
 ##
+# Detect last modification dates from $APPLICATION_URLS
+##
+.docker_support:.trigger_on_update:.detect_app_dates: &detect_app_dates |
+  detect_app_dates() {
+    set -euo pipefail
+    urls="${1}"
+    ref="${2}"
+    echo "${urls}" | tr ' ' '\n' | while read url; do
+      case "${url}" in
+        git*|*.git)
+          log "Detecting application date from latest commit" \
+              "in branch '${DOWNSTREAM_REF}' of git repository ${url}"
+          repo="$(mktemp -d)"
+          git clone -q --depth 1 --branch "${ref}" "${url}" "${repo}"
+          app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
+        http*)
+          log "Detecting application date from last modification of ${url}"
+          app_date="$(wget -q --spider -S "${url}" 2>&1 \
+                      | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' \
+                      | xargs date +%s -d)" ;;
+        *)
+          log "Unsupported protocol for application URL '${url}'" ;;
+      esac
+      if [ -n "${app_date-}" ]; then
+        log "Result: $(date --utc -Iseconds -d "@${app_date}")"
+        echo "${app_date}"
+      else
+        log "No date found for application URL '${url}'"
+      fi
+    done
+  }
+
+##
+# Detect application date.
+##
+.docker_support:.trigger_on_update:.detect_latest_app_date: &detect_latest_app_date |
+  detect_latest_app_date() {
+    app_date="$(detect_app_dates "${APPLICATION_URLS}" "${DOWNSTREAM_REF}" | sort -r | head -n 1)"
+    if [ -z "${app_date-}" ]; then
+      log "No application date found."
+    else
+      log "Application:  $(date --utc -Iseconds -d "@${app_date}")"
+      echo "${app_date}"
+    fi
+  }
+
+##
+# Detect date of latest Docker image.
+##
+.docker_support:.trigger_on_update:.detect_latest_image_date: &detect_latest_image_date |
+  detect_latest_image_date() {
+    set -euo pipefail
+    case "${DOCKER_REPOSITORY}" in
+      http*) repo_url="${DOCKER_REPOSITORY}" ;;
+      *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
+    esac
+    log "Detecting image date from Docker repository ${repo_url}"
+    image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
+    if [ -n "${image_date-}" ]; then
+      log "Latest image: $(date --utc -Iseconds -d "@${image_date}")"
+      echo "${image_date}"
+    else
+      log "No date found for Docker image '${repo_url}'"
+    fi
+  }
+
+##
 # Check if an update is available. If so, trigger a build.
 #
 # - To activate this job, set variable PIPELINE_MODE to 'update-check'.
-# - The variable APPLICATION_URL is used to check the application date;
-#   the URL may point to a git repository or HTTP resource.
+# - The variable APPLICATION_URLS is used to check the application date;
+#   it may contain a space-separated list of URLs pointing to a HTTP
+#   resource or a git repository.
 # - The variable DOCKER_REPOSITORY is used to check the Docker image date;
 #   it may either contain an URL to an image in a Docker registry or the
 #   name of an image on Docker Hub (e.g. 'owner/example-image').
@@ -241,53 +309,15 @@ default:
   - set -euo pipefail
   - apk add --no-cache coreutils jq git curl
   - log() { echo >&2 "${@}"; }
-  - |
-    detect_app_date() {
-      set -euo pipefail
-      case "${APPLICATION_URL}" in
-        git*|*.git)
-          log "Detecting application date from latest commit" \
-              " in branch '${DOWNSTREAM_REF}' of git repository ${APPLICATION_URL}"
-          repo="$(mktemp -d)"
-          git clone -q --depth 1 --branch "${DOWNSTREAM_REF}" "${APPLICATION_URL}" "${repo}"
-          app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
-        http*)
-          log "Detecting application date from last modification of ${APPLICATION_URL}"
-          app_date="$(wget -q --spider -S "${APPLICATION_URL}" 2>&1 \
-                      | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' \
-                      | xargs date +%s -d)" ;;
-        *)
-          log "Unsupported protocol for application URL '${APPLICATION_URL}'" ;;
-      esac
-      if [ -z "${app_date}" ]; then
-        log "No date found for application URL '${APPLICATION_URL}'"
-        return 1
-      fi
-      log "Application:  $(date --utc -Iseconds -d "@${app_date}")"
-      echo "${app_date}"
-    }
-  - |
-    detect_image_date() {
-      set -euo pipefail
-      case "${DOCKER_REPOSITORY}" in
-        http*) repo_url="${DOCKER_REPOSITORY}" ;;
-        *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
-      esac
-      log "Detecting image date from Docker repository ${repo_url}"
-      image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
-      if [ -z "${image_date}" ]; then
-        log "No date found for Docker image '${repo_url}'"
-        return 1
-      fi
-      log "Latest image: $(date --utc -Iseconds -d "@${image_date}")"
-      echo "${image_date}"
-    }
+  - *detect_tag_dates
+  - *detect_latest_tag_date
+  - *detect_latest_image_date
   script:
   - |
     echo "Docker repository: ${DOCKER_REPOSITORY}"
-    app_date="$(detect_app_date)"
-    image_date="$(detect_image_date)"
-    if [ -z "${app_date}" ] || [ -z "${image_date}" ]; then
+    app_date="$(detect_latest_app_date)"
+    image_date="$(detect_latest_image_date)"
+    if [ -z "${app_date-}" ] || [ -z "${image_date-}" ]; then
       log "An error occured while detecting dates."
       exit 1
     elif [ "${app_date}" -le "${image_date}" ]; then
