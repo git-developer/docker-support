@@ -309,8 +309,8 @@ default:
   - set -euo pipefail
   - apk add --no-cache coreutils jq git curl
   - log() { echo >&2 "${@}"; }
-  - *detect_tag_dates
-  - *detect_latest_tag_date
+  - *detect_app_dates
+  - *detect_latest_app_date
   - *detect_latest_image_date
   script:
   - |
