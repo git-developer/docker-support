@@ -12,7 +12,7 @@ variables:
   PIPELINE_MODE: "build"
   DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
   DOWNSTREAM_REF:     "${CI_COMMIT_REF_NAME}"
-  DOCKER_REPOSITORY:  "${CI_PROJECT_PATH}"
+  IMAGE_REPOSITORY:   "${CI_PROJECT_PATH}"
   APPLICATION_URLS:   "${CI_REPOSITORY_URL}"
 
 default:
@@ -268,9 +268,9 @@ default:
 .docker_support:.trigger_on_update:.detect_latest_image_date: &detect_latest_image_date |
   detect_latest_image_date() {
     set -euo pipefail
-    case "${DOCKER_REPOSITORY}" in
-      http*) repo_url="${DOCKER_REPOSITORY}" ;;
-      *)     repo_url="https://hub.docker.com/v2/repositories/${DOCKER_REPOSITORY}" ;;
+    case "${IMAGE_REPOSITORY}" in
+      http*) repo_url="${IMAGE_REPOSITORY}" ;;
+      *)     repo_url="https://hub.docker.com/v2/repositories/${IMAGE_REPOSITORY}" ;;
     esac
     log "Detecting image date from Docker repository ${repo_url}"
     image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
@@ -289,7 +289,7 @@ default:
 # - The variable APPLICATION_URLS is used to check the application date;
 #   it may contain a space-separated list of URLs pointing to a HTTP
 #   resource or a git repository.
-# - The variable DOCKER_REPOSITORY is used to check the Docker image date;
+# - The variable IMAGE_REPOSITORY is used to check the Docker image date;
 #   it may either contain an URL to an image in a Docker registry or the
 #   name of an image on Docker Hub (e.g. 'owner/example-image').
 # - If the image is outdated, a pipeline for $DOWNSTREAM_PROJECT on branch
@@ -314,7 +314,7 @@ default:
   - *detect_latest_image_date
   script:
   - |
-    echo "Docker repository: ${DOCKER_REPOSITORY}"
+    echo "Image repository: ${IMAGE_REPOSITORY}"
     app_date="$(detect_latest_app_date)"
     image_date="$(detect_latest_image_date)"
     if [ -z "${app_date-}" ] || [ -z "${image_date-}" ]; then
