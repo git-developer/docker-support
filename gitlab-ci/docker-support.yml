@@ -198,7 +198,7 @@ default:
     - *configure_multiarch_builder
     - *configure_docker_auth_pass
     - |
-      <<EOF docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
+      <<EOF docker login -u "${CI_REGISTRY_USER}" --password-stdin ${CI_REGISTRY:+"${CI_REGISTRY}"}
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
