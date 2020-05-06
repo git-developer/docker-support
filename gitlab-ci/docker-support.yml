@@ -230,12 +230,13 @@ default:
               "in branch '${DOWNSTREAM_REF}' of git repository ${url}"
           repo="$(mktemp -d)"
           git clone -q --depth 1 --branch "${ref}" "${url}" "${repo}"
-          app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)" ;;
+          app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)"
+          ;;
         http*)
           log "Detecting application date from last modification of ${url}"
-          app_date="$(wget -q --spider -S "${url}" 2>&1 \
-                      | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p' \
-                      | xargs date +%s -d)" ;;
+          last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p')"
+          [ -z "${last_modified_date}" ] || app_date="$(date +%s -d "${last_modified_date}")"
+          ;;
         *)
           log "Unsupported protocol for application URL '${url}'" ;;
       esac
