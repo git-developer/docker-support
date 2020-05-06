@@ -234,7 +234,7 @@ default:
           ;;
         http*)
           log "Detecting application date from last modification of ${url}"
-          last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/"\1"/p')"
+          last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
           [ -z "${last_modified_date}" ] || app_date="$(date +%s -d "${last_modified_date}")"
           ;;
         *)
