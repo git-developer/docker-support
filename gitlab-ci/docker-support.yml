@@ -246,6 +246,7 @@ default:
       else
         log "No date found for application URL '${url}'"
       fi
+      unset app_date
     done
   }
 
