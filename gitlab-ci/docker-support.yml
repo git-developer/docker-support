@@ -273,7 +273,7 @@ default:
       *)     repo_url="https://hub.docker.com/v2/repositories/${IMAGE_REPOSITORY}" ;;
     esac
     log "Detecting image date from Docker repository ${repo_url}"
-    image_date="$(wget -q -O - "${repo_url}/tags" | jq -r '.results | max_by(.last_updated) | .last_updated' | xargs date +%s -d)"
+    image_date="$(wget -q -O - "${repo_url}/tags" | jq -r ".results[] | select(.name==\"${IMAGE_VERSION}\") | .last_updated" | xargs date +%s -d)"
     if [ -n "${image_date-}" ]; then
       log "Latest image: $(date --utc -Iseconds -d "@${image_date}")"
       echo "${image_date}"
