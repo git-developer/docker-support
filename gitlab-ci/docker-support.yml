@@ -278,7 +278,7 @@ default:
 #   REGISTRY_BASE_URL      (required)
 #   REGISTRY_AUTH_BASE_URL (required)
 #   REGISTRY_AUTH_SERVICE  (required)
-#   CI_REGISTRY_USERNAME   (optional)
+#   CI_REGISTRY_USER       (optional)
 #   CI_REGISTRY_PASSWORD   (optional)
 # All required variables have default values appropriate for Docker Hub,
 # defined as top level variables in this file.
@@ -295,7 +295,7 @@ default:
             | tr -d '\r' \
             | head -n 1)" ]; then
       token_url="${REGISTRY_AUTH_BASE_URL}/token?service=${REGISTRY_AUTH_SERVICE}&scope=repository:${IMAGE_NAME}:pull"
-      token=$(echo -sSL ${CI_REGISTRY_PASSWORD:+-u "${CI_REGISTRY_USERNAME}:${CI_REGISTRY_PASSWORD}"} \
+      token=$(echo -sSL ${CI_REGISTRY_PASSWORD:+-u "${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
               | curl -K - "${token_url}" \
               | jq -r '.token')
     fi
