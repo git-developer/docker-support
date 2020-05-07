@@ -295,7 +295,7 @@ default:
             | tr -d '\r' \
             | head -n 1)" ]; then
       token_url="${REGISTRY_AUTH_BASE_URL}/token?service=${REGISTRY_AUTH_SERVICE}&scope=repository:${IMAGE_NAME}:pull"
-      token=$(echo -sSL ${CI_REGISTRY_PASSWORD:+-u "${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
+      token=$(printf "%s\n" -sSL ${CI_REGISTRY_PASSWORD:+-u "${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
               | curl -K - "${token_url}" \
               | jq -r '.token')
     fi
