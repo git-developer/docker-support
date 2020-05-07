@@ -229,7 +229,7 @@ default:
       case "${url}" in
         git*|*.git)
           log "Detecting application date from latest commit" \
-              "in branch '${DOWNSTREAM_REF}' of git repository ${url}"
+              "in branch '${DOWNSTREAM_REF}' of git repository '${url}'"
           repo="$(mktemp -d)"
           git clone -q --depth 1 --branch "${ref}" "${url}" "${repo}"
           app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)"
@@ -243,7 +243,7 @@ default:
           log "Unsupported protocol for application URL '${url}'" ;;
       esac
       if [ -n "${app_date-}" ]; then
-        log "Result: $(date --utc -Iseconds -d "@${app_date}")"
+        log "Application: $(date --utc -Iseconds -d "@${app_date}")"
         echo "${app_date}"
       else
         log "No date found for application URL '${url}'"
@@ -261,7 +261,7 @@ default:
     if [ -z "${app_date-}" ]; then
       log "No application date found."
     else
-      log "Application:  $(date --utc -Iseconds -d "@${app_date}")"
+      log "Latest application date: $(date --utc -Iseconds -d "@${app_date}")"
       echo "${app_date}"
     fi
   }
@@ -310,7 +310,7 @@ default:
                                        | jq -r '.created' \
                                        | xargs date +%s -d)
     if [ -n "${image_date-}" ]; then
-      log "Latest image: $(date --utc -Iseconds -d "@${image_date}")"
+      log "Latest image date: $(date --utc -Iseconds -d "@${image_date}")"
       echo "${image_date}"
     else
       log "No date found for Docker image '${IMAGE_NAME}:${IMAGE_VERSION}'"
