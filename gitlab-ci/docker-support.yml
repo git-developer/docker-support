@@ -10,10 +10,12 @@ variables:
   BUILD_CACHE: "build-cache"
 
   PIPELINE_MODE: "build"
-  DOWNSTREAM_PROJECT: "${CI_PROJECT_PATH}"
-  DOWNSTREAM_REF:     "${CI_COMMIT_REF_NAME}"
-  IMAGE_REPOSITORY:   "${CI_PROJECT_PATH}"
-  APPLICATION_URLS:   "${CI_REPOSITORY_URL}"
+  DOWNSTREAM_PROJECT:     "${CI_PROJECT_PATH}"
+  DOWNSTREAM_REF:         "${CI_COMMIT_REF_NAME}"
+  APPLICATION_URLS:       "${CI_REPOSITORY_URL}"
+  CI_REGISTRY:            "index.docker.io"
+  REGISTRY_AUTH_BASE_URL: "https://auth.docker.io"
+  REGISTRY_AUTH_SERVICE:  "registry.docker.io"
 
 default:
   artifacts:
@@ -266,21 +268,52 @@ default:
 
 ##
 # Detect date of latest Docker image.
+#
+# Reads the manifest from the Docker registry
+# and extracts the date of the from the image configuration.
+#
+# This job supports registry authentication as defined in
+# https://docs.docker.com/registry/spec/auth/token/
+# The following variables may be used for auth configuration:
+#   REGISTRY_AUTH_BASE_URL (required)
+#   REGISTRY_AUTH_SERVICE  (required)
+#   CI_REGISTRY            (required)
+#   CI_REGISTRY_USERNAME   (optional)
+#   CI_REGISTRY_PASSWORD   (optional)
+# All required variables have default values appropriate for Docker Hub,
+# defined as top level variables in this file.
 ##
 .docker_support:.trigger_on_update:.detect_latest_image_date: &detect_latest_image_date |
   detect_latest_image_date() {
     set -euo pipefail
-    case "${IMAGE_REPOSITORY}" in
-      http*) repo_url="${IMAGE_REPOSITORY}" ;;
-      *)     repo_url="https://hub.docker.com/v2/repositories/${IMAGE_REPOSITORY}" ;;
-    esac
-    log "Detecting image date from Docker repository ${repo_url}"
-    image_date="$(wget -q -O - "${repo_url}/tags" | jq -r ".results[] | select(.name==\"${IMAGE_VERSION}\") | .last_updated" | xargs date +%s -d)"
+    log "Detecting image date from Docker image ${IMAGE_NAME}:${IMAGE_VERSION}"
+    registry_base_url="https://${CI_REGISTRY}/v2/${IMAGE_NAME}"
+    if [ 'HTTP/1.1 401 Unauthorized' = \
+         "$(curl -sSL -I \
+              --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+              "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+            | tr -d '\r' \
+            | head -n 1)" ]; then
+      token_url="${REGISTRY_AUTH_BASE_URL}/token?service=${REGISTRY_AUTH_SERVICE}&scope=repository:${IMAGE_NAME}:pull"
+      token=$(echo -sSL ${CI_REGISTRY_PASSWORD:+-u "${CI_REGISTRY_USERNAME}:${CI_REGISTRY_PASSWORD}"} \
+              | curl -K - "${token_url}" \
+              | jq -r '.token')
+    fi
+    digest=$(curl -sSL \
+               --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+               ${token:+--header "Authorization: Bearer ${token}"} \
+               "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+             | jq -r '.config.digest')
+    [ -z "${digest}" ] || image_date=$(curl -sSL \
+                                         ${token:+--header "Authorization: Bearer ${token}"} \
+                                         "${registry_base_url}/blobs/${digest}" \
+                                       | jq -r '.created' \
+                                       | xargs date +%s -d)
     if [ -n "${image_date-}" ]; then
       log "Latest image: $(date --utc -Iseconds -d "@${image_date}")"
       echo "${image_date}"
     else
-      log "No date found for Docker image '${repo_url}'"
+      log "No date found for Docker image '${IMAGE_NAME}:${IMAGE_VERSION}'"
     fi
   }
 
@@ -291,9 +324,6 @@ default:
 # - The variable APPLICATION_URLS is used to check the application date;
 #   it may contain a space-separated list of URLs pointing to a HTTP
 #   resource or a git repository.
-# - The variable IMAGE_REPOSITORY is used to check the Docker image date;
-#   it may either contain an URL to an image in a Docker registry or the
-#   name of an image on Docker Hub (e.g. 'owner/example-image').
 # - If the image is outdated, a pipeline for $DOWNSTREAM_PROJECT on branch
 #   $DOWNSTREAM_REF is triggered. Project and branch default to the current
 #   environment, so that by default the current project is build.
@@ -316,7 +346,7 @@ default:
   - *detect_latest_image_date
   script:
   - |
-    echo "Image repository: ${IMAGE_REPOSITORY}"
+    echo "Image: ${IMAGE_NAME}:${IMAGE_VERSION}"
     app_date="$(detect_latest_app_date)"
     image_date="$(detect_latest_image_date)"
     if [ -z "${app_date-}" ] || [ -z "${image_date-}" ]; then
