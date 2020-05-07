@@ -34,7 +34,6 @@ To publish to Docker hub, set the following variables within the CI/CD settings 
 |Key|Value|
 |---|-----|
 |`CI_REGISTRY`|`docker.io`|
-|`CI_REGISTRY_IMAGE`|`docker.io/$CI_PROJECT_PATH`|
 |`CI_REGISTRY_USER`| _Username for Docker Hub_|
 |`CI_REGISTRY_PASSWORD`| _Access Token for Docker Hub_|
 
