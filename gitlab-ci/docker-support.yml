@@ -13,7 +13,7 @@ variables:
   DOWNSTREAM_PROJECT:     "${CI_PROJECT_PATH}"
   DOWNSTREAM_REF:         "${CI_COMMIT_REF_NAME}"
   APPLICATION_URLS:       "${CI_REPOSITORY_URL}"
-  CI_REGISTRY:            "index.docker.io"
+  REGISTRY_BASE_URL:      "https://index.docker.io"
   REGISTRY_AUTH_BASE_URL: "https://auth.docker.io"
   REGISTRY_AUTH_SERVICE:  "registry.docker.io"
 
@@ -275,9 +275,9 @@ default:
 # This job supports registry authentication as defined in
 # https://docs.docker.com/registry/spec/auth/token/
 # The following variables may be used for auth configuration:
+#   REGISTRY_BASE_URL      (required)
 #   REGISTRY_AUTH_BASE_URL (required)
 #   REGISTRY_AUTH_SERVICE  (required)
-#   CI_REGISTRY            (required)
 #   CI_REGISTRY_USERNAME   (optional)
 #   CI_REGISTRY_PASSWORD   (optional)
 # All required variables have default values appropriate for Docker Hub,
@@ -287,7 +287,7 @@ default:
   detect_latest_image_date() {
     set -euo pipefail
     log "Detecting image date from Docker image ${IMAGE_NAME}:${IMAGE_VERSION}"
-    registry_base_url="https://${CI_REGISTRY}/v2/${IMAGE_NAME}"
+    registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
     if [ 'HTTP/1.1 401 Unauthorized' = \
          "$(curl -sSL -I \
               --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
