@@ -121,7 +121,7 @@ default:
     - labels
 
 ##
-# Write buid arguments to the build-args directory.
+# Write build arguments to the build-args directory.
 ##
 .docker_support:.collect_build_args:
   extends: .docker_support:.build_job
