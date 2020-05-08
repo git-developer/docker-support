@@ -243,7 +243,7 @@ default:
           log "Unsupported protocol for URL '${url}'" ;;
       esac
       if [ -n "${url_date-}" ]; then
-        log "'${url}' changed at $(date --utc -Iseconds -d "@${url_date}")"
+        log "$(date --utc -Iseconds -d "@${url_date}") for ${url}"
         echo "${url_date}"
       else
         log "No date found for URL '${url}'"
@@ -253,24 +253,10 @@ default:
   }
 
 ##
-# Detect last modification of all $UPDATE_CHECK_URLS.
-##
-.docker_support:.trigger_on_update:.detect_last_modification: &detect_last_modification |
-  detect_last_modification() {
-    last_modification="$(detect_last_modifications "${UPDATE_CHECK_URLS}" "${DOWNSTREAM_REF}" | sort -r | head -n 1)"
-    if [ -z "${last_modification-}" ]; then
-      log "No date found."
-    else
-      log "Last modification: $(date --utc -Iseconds -d "@${last_modification}")"
-      echo "${last_modification}"
-    fi
-  }
-
-##
-# Detect date of latest Docker image.
+# Detect the date of all Docker images that are available for the image name.
 #
-# Reads the manifest from the Docker registry
-# and extracts the date of the from the image configuration.
+# Reads the manifest list from the Docker registry
+# and extracts the date of all images.
 #
 # This job supports registry authentication as defined in
 # https://docs.docker.com/registry/spec/auth/token/
@@ -283,12 +269,13 @@ default:
 # All required variables have default values appropriate for Docker Hub,
 # defined as top level variables in this file.
 ##
-.docker_support:.trigger_on_update:.detect_latest_image_date: &detect_latest_image_date |
-  detect_latest_image_date() {
+.docker_support:.trigger_on_update:.detect_image_dates: &detect_image_dates |
+  detect_image_dates() {
     set -euo pipefail
-    log "Detecting image date from Docker image ${IMAGE_NAME}:${IMAGE_VERSION}"
+    log "Detecting dates of images available as ${IMAGE_NAME}:${IMAGE_VERSION}"
     registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
     manifest_header='Accept: application/vnd.docker.distribution.manifest.v2+json'
+    manifest_list_header='Accept: application/vnd.docker.distribution.manifest.list.v2+json'
     # fetch auth token if required
     if [ 'HTTP/1.1 401 Unauthorized' = \
          "$(curl -I -sSL \
@@ -301,25 +288,48 @@ default:
               | curl -K - "${token_url}" \
               | jq -r '.token')
     fi
-    # find id of 'config' (a JSON blob containing the date) in the manifest
-    config_digest=$(curl -sSL \
-                        --header "${manifest_header}" \
-                        ${token:+--header "Authorization: Bearer ${token}"} \
-                        "${registry_base_url}/manifests/${IMAGE_VERSION}" \
-                      | jq -r '.config.digest')
-    if [ -n "${config_digest}" ]; then
-      image_date=$(curl -sSL \
-                     ${token:+--header "Authorization: Bearer ${token}"} \
-                     "${registry_base_url}/blobs/${config_digest}" \
-                   | jq -r '.created' \
-                   | xargs date +%s -d)
-    fi
-    # extract image date
-    if [ -n "${image_date-}" ]; then
-      log "Latest image date: $(date --utc -Iseconds -d "@${image_date}")"
-      echo "${image_date}"
+    # fetch and iterate manifest list
+    curl -sSL \
+         --header "${manifest_list_header}" \
+         ${token:+--header "Authorization: Bearer ${token}"} \
+         "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+    | jq -r '.manifests[] | .digest + " " + (.platform | .os + "/" + .architecture + if (.variant != null) then "/" + .variant else "" end)' \
+    | while read manifest_digest platform; do
+      # find id of 'config' (a JSON blob containing the date) in the manifest
+      config_digest=$(curl -sSL \
+                          --header "${manifest_header}" \
+                          ${token:+--header "Authorization: Bearer ${token}"} \
+                          "${registry_base_url}/manifests/${manifest_digest}" \
+                        | jq -r '.config.digest')
+      if [ -n "${config_digest}" ]; then
+        image_date=$(curl -sSL \
+                       ${token:+--header "Authorization: Bearer ${token}"} \
+                       "${registry_base_url}/blobs/${config_digest}" \
+                     | jq -r '.created' \
+                     | xargs date +%s -d)
+      fi
+      # extract image date
+      if [ -n "${image_date-}" ]; then
+        log "$(date --utc -Iseconds -d "@${image_date}") for platform ${platform}"
+        echo "${image_date}"
+      else
+        log "No date found for image '${IMAGE_NAME}:${config_digest}'"
+      fi
+      image_date=""
+    done
+  }
+
+##
+# Read timestamps from stdin and write the latest one to stdout.
+##
+.docker_support:.trigger_on_update:.find_latest: &find_latest |
+  find_latest() {
+    latest="$(sort -r | head -n 1)"
+    if [ -z "${latest}" ]; then
+      log "No date found."
     else
-      log "No date found for Docker image '${IMAGE_NAME}:${IMAGE_VERSION}'"
+      log "Latest date: $(date --utc -Iseconds -d "@${latest}")"
+      echo "${latest}"
     fi
   }
 
@@ -348,13 +358,13 @@ default:
   - apk add --no-cache coreutils jq git curl
   - log() { echo >&2 "${@}"; }
   - *detect_last_modifications
-  - *detect_last_modification
-  - *detect_latest_image_date
+  - *detect_image_dates
+  - *find_latest
   script:
   - |
     echo "Image: ${IMAGE_NAME}:${IMAGE_VERSION}"
-    last_modification="$(detect_last_modification)"
-    image_date="$(detect_latest_image_date)"
+    last_modification="$(detect_last_modifications "${UPDATE_CHECK_URLS}" "${DOWNSTREAM_REF}" | find_latest)"
+    image_date="$(detect_image_dates | find_latest)"
     if [ -z "${last_modification-}" ] || [ -z "${image_date-}" ]; then
       log "An error occured while detecting dates."
       exit 1
