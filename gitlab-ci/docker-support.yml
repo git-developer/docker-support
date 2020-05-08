@@ -12,7 +12,7 @@ variables:
   PIPELINE_MODE: "build"
   DOWNSTREAM_PROJECT:     "${CI_PROJECT_PATH}"
   DOWNSTREAM_REF:         "${CI_COMMIT_REF_NAME}"
-  APPLICATION_URLS:       "${CI_REPOSITORY_URL}"
+  UPDATE_CHECK_URLS:      "${CI_REPOSITORY_URL}"
   REGISTRY_BASE_URL:      "https://index.docker.io"
   REGISTRY_AUTH_BASE_URL: "https://auth.docker.io"
   REGISTRY_AUTH_SERVICE:  "registry.docker.io"
@@ -218,51 +218,51 @@ default:
     - docker logout
 
 ##
-# Detect last modification dates from $APPLICATION_URLS
+# Detect last modification date for a list of URLs.
 ##
-.docker_support:.trigger_on_update:.detect_app_dates: &detect_app_dates |
-  detect_app_dates() {
+.docker_support:.trigger_on_update:.detect_last_modifications: &detect_last_modifications |
+  detect_last_modifications() {
     set -euo pipefail
     urls="${1}"
     ref="${2}"
     echo "${urls}" | tr ' ' '\n' | while read url; do
       case "${url}" in
         git*|*.git)
-          log "Detecting application date from latest commit" \
+          log "Detecting date of latest commit" \
               "in branch '${DOWNSTREAM_REF}' of git repository '${url}'"
           repo="$(mktemp -d)"
           git clone -q --depth 1 --branch "${ref}" "${url}" "${repo}"
-          app_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)"
+          url_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)"
           ;;
         http*)
-          log "Detecting application date from last modification of ${url}"
+          log "Detecting last modification date of ${url}"
           last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
-          [ -z "${last_modified_date}" ] || app_date="$(date +%s -d "${last_modified_date}")"
+          [ -z "${last_modified_date}" ] || url_date="$(date +%s -d "${last_modified_date}")"
           ;;
         *)
-          log "Unsupported protocol for application URL '${url}'" ;;
+          log "Unsupported protocol for URL '${url}'" ;;
       esac
-      if [ -n "${app_date-}" ]; then
-        log "Application: $(date --utc -Iseconds -d "@${app_date}")"
-        echo "${app_date}"
+      if [ -n "${url_date-}" ]; then
+        log "'${url}' changed at $(date --utc -Iseconds -d "@${url_date}")"
+        echo "${url_date}"
       else
-        log "No date found for application URL '${url}'"
+        log "No date found for URL '${url}'"
       fi
-      app_date=""
+      url_date=""
     done
   }
 
 ##
-# Detect application date.
+# Detect last modification of all $UPDATE_CHECK_URLS.
 ##
-.docker_support:.trigger_on_update:.detect_latest_app_date: &detect_latest_app_date |
-  detect_latest_app_date() {
-    app_date="$(detect_app_dates "${APPLICATION_URLS}" "${DOWNSTREAM_REF}" | sort -r | head -n 1)"
-    if [ -z "${app_date-}" ]; then
-      log "No application date found."
+.docker_support:.trigger_on_update:.detect_last_modification: &detect_last_modification |
+  detect_last_modification() {
+    last_modification="$(detect_last_modifications "${UPDATE_CHECK_URLS}" "${DOWNSTREAM_REF}" | sort -r | head -n 1)"
+    if [ -z "${last_modification-}" ]; then
+      log "No date found."
     else
-      log "Latest application date: $(date --utc -Iseconds -d "@${app_date}")"
-      echo "${app_date}"
+      log "Last modification: $(date --utc -Iseconds -d "@${last_modification}")"
+      echo "${last_modification}"
     fi
   }
 
@@ -288,9 +288,11 @@ default:
     set -euo pipefail
     log "Detecting image date from Docker image ${IMAGE_NAME}:${IMAGE_VERSION}"
     registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
+    manifest_header='Accept: application/vnd.docker.distribution.manifest.v2+json'
+    # fetch auth token if required
     if [ 'HTTP/1.1 401 Unauthorized' = \
-         "$(curl -sSL -I \
-              --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+         "$(curl -I -sSL \
+              --header "${manifest_header}" \
               "${registry_base_url}/manifests/${IMAGE_VERSION}" \
             | tr -d '\r' \
             | head -n 1)" ]; then
@@ -299,16 +301,20 @@ default:
               | curl -K - "${token_url}" \
               | jq -r '.token')
     fi
-    digest=$(curl -sSL \
-               --header "Accept: application/vnd.docker.distribution.manifest.v2+json" \
-               ${token:+--header "Authorization: Bearer ${token}"} \
-               "${registry_base_url}/manifests/${IMAGE_VERSION}" \
-             | jq -r '.config.digest')
-    [ -z "${digest}" ] || image_date=$(curl -sSL \
-                                         ${token:+--header "Authorization: Bearer ${token}"} \
-                                         "${registry_base_url}/blobs/${digest}" \
-                                       | jq -r '.created' \
-                                       | xargs date +%s -d)
+    # find id of 'config' (a JSON blob containing the date) in the manifest
+    config_digest=$(curl -sSL \
+                        --header "${manifest_header}" \
+                        ${token:+--header "Authorization: Bearer ${token}"} \
+                        "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+                      | jq -r '.config.digest')
+    if [ -n "${config_digest}" ]; then
+      image_date=$(curl -sSL \
+                     ${token:+--header "Authorization: Bearer ${token}"} \
+                     "${registry_base_url}/blobs/${config_digest}" \
+                   | jq -r '.created' \
+                   | xargs date +%s -d)
+    fi
+    # extract image date
     if [ -n "${image_date-}" ]; then
       log "Latest image date: $(date --utc -Iseconds -d "@${image_date}")"
       echo "${image_date}"
@@ -321,7 +327,7 @@ default:
 # Check if an update is available. If so, trigger a build.
 #
 # - To activate this job, set variable PIPELINE_MODE to 'update-check'.
-# - The variable APPLICATION_URLS is used to check the application date;
+# - The variable UPDATE_CHECK_URLS is used to check the application date;
 #   it may contain a space-separated list of URLs pointing to a HTTP
 #   resource or a git repository.
 # - If the image is outdated, a pipeline for $DOWNSTREAM_PROJECT on branch
@@ -341,18 +347,18 @@ default:
   - set -euo pipefail
   - apk add --no-cache coreutils jq git curl
   - log() { echo >&2 "${@}"; }
-  - *detect_app_dates
-  - *detect_latest_app_date
+  - *detect_last_modifications
+  - *detect_last_modification
   - *detect_latest_image_date
   script:
   - |
     echo "Image: ${IMAGE_NAME}:${IMAGE_VERSION}"
-    app_date="$(detect_latest_app_date)"
+    last_modification="$(detect_last_modification)"
     image_date="$(detect_latest_image_date)"
-    if [ -z "${app_date-}" ] || [ -z "${image_date-}" ]; then
+    if [ -z "${last_modification-}" ] || [ -z "${image_date-}" ]; then
       log "An error occured while detecting dates."
       exit 1
-    elif [ "${app_date}" -le "${image_date}" ]; then
+    elif [ "${last_modification}" -le "${image_date}" ]; then
       log "Image is up-to-date."
     else
       log "Image is outdated. Triggering build of project '${DOWNSTREAM_PROJECT}' with ref '${DOWNSTREAM_REF}'."
