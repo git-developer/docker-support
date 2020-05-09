@@ -9,10 +9,21 @@ variables:
   DOCKER_CLI_EXPERIMENTAL: "enabled"
   BUILD_CACHE: "build-cache"
 
+  PIPELINE_MODE: "build"
+  DOWNSTREAM_PROJECT:     "${CI_PROJECT_PATH}"
+  DOWNSTREAM_REF:         "${CI_COMMIT_REF_NAME}"
+  UPDATE_CHECK_URLS:      "${CI_REPOSITORY_URL}"
+  REGISTRY_BASE_URL:      "https://index.docker.io"
+  REGISTRY_AUTH_BASE_URL: "https://auth.docker.io"
+  REGISTRY_AUTH_SERVICE:  "registry.docker.io"
+
 default:
   artifacts:
     expire_in: 1 hour
 
+##
+# Download and configure buildx for multiarch builds.
+##
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
   mkdir -p ~/.docker/cli-plugins
@@ -20,6 +31,15 @@ default:
   chmod +x ~/.docker/cli-plugins/docker-buildx
   docker buildx create --use --name builder
 
+##
+# Download and configure the docker credential helper for 'pass'.
+#
+# This job initializes a password store with the passphrase $GPG_PASSPHRASE
+# or a random password as fallback. The password store will be used to store
+# the credentials to the image registry.
+# Without a credential helper, the credentials to the docker registry are
+# stored in a plain text file.
+##
 .docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
   wget -q -O - "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}-amd64.tar.gz" | tar -C /usr/bin -xz
   chmod +x /usr/bin/docker-credential-pass
@@ -40,7 +60,19 @@ default:
   mkdir -p ~/.docker
   echo "{\"credsStore\":\"pass\"}" >~/.docker/config.json
 
+##
+# Base job for build jobs (in contrast to the update-check job
+# '.docker_support:.trigger_on_update:').
+##
+.docker_support:.build_job:
+  rules:
+  - if: '$PIPELINE_MODE == "build"'
+
+##
+# Write default tags to the tags directory.
+##
 .docker_support:.collect_tags:
+  extends: .docker_support:.build_job
   image: "alpine"
   before_script:
   - set -euo pipefail
@@ -51,14 +83,21 @@ default:
     paths:
     - tags
 
+##
+# Write default labels to the labels directory.
+#
+# Default labels are created for the OCI defined annotations.
+# Metadata is taken from pre-defined project variables and the GitLab API.
+##
 .docker_support:.collect_labels:
+  extends: .docker_support:.build_job
   image: "alpine"
   before_script:
   - set -euo pipefail
   script:
   - apk add wget jq coreutils
-  - gitlab_project_metadata="$(wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}?license=yes")"
-  - gitlab_users_metadata="$(  wget -q -O - "${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}/users")"
+  - gitlab_project_metadata="$(wget -q -O - "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}?license=yes")"
+  - gitlab_users_metadata="$(  wget -q -O - "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/users")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
   - authors="$(printf "%s" "${gitlab_users_metadata}" | jq -r '. | map((.name // empty) + if .web_url != null then " ("+.web_url+")" else "" end) | join(", ")')"
   - oci='org.opencontainers.image'
@@ -81,8 +120,14 @@ default:
     paths:
     - labels
 
+##
+# Write build arguments to the build-args directory.
+##
 .docker_support:.collect_build_args:
+  extends: .docker_support:.build_job
   image: "alpine"
+  rules:
+  - if: '$PIPELINE_MODE == "build" && $BUILD_ARGS'
   before_script:
   - set -euo pipefail
   script:
@@ -92,11 +137,19 @@ default:
     paths:
     - build-args
 
+##
+# Base job for build jobs using Docker-in-Docker
+##
 .docker_support:.base:
   image: "docker:${DOCKER_VERSION}"
+  extends: .docker_support:.build_job
   services:
-    - name: "docker:${DOCKER_VERSION}-dind"
+  - name: "docker:${DOCKER_VERSION}-dind"
 
+##
+# Build the bare docker image without tags and labels
+# and store it in the build cache.
+##
 .docker_support:.build_bare_image:
   extends: .docker_support:.base
   before_script:
@@ -115,6 +168,11 @@ default:
     paths:
     - "${BUILD_CACHE}"
 
+##
+# Base job for jobs that use the bare image,
+# e.g. to analyze it and create additional tags from
+# the application version.
+##
 .docker_support:.with_bare_image:
   extends: .docker_support:.base
   before_script:
@@ -130,6 +188,11 @@ default:
         printf "%s\0" "${BUILD_CONTEXT}"
       } | xargs -0 docker buildx build
 
+##
+# Read the bare image, add alls tags and labels and push it to the registry.
+# The default registry may be overriden by GitLab variables
+# CI_REGISTRY, CI_REGISTRY_USER and CI_REGISTRY_PASSWORD.
+##
 .docker_support:.publish_image:
   extends: .docker_support:.base
   before_script:
@@ -137,7 +200,7 @@ default:
     - *configure_multiarch_builder
     - *configure_docker_auth_pass
     - |
-      <<EOF docker login -u "${CI_REGISTRY_USER}" --password-stdin "${CI_REGISTRY}"
+      <<EOF docker login -u "${CI_REGISTRY_USER}" --password-stdin ${CI_REGISTRY:+"${CI_REGISTRY}"}
       ${CI_REGISTRY_PASSWORD}
       EOF
   script:
@@ -153,3 +216,165 @@ default:
       } | xargs -0 docker buildx build
   after_script:
     - docker logout
+
+##
+# Detect last modification date for a list of URLs.
+##
+.docker_support:.trigger_on_update:.detect_last_modifications: &detect_last_modifications |
+  detect_last_modifications() {
+    set -euo pipefail
+    urls="${1}"
+    ref="${2}"
+    echo "${urls}" | tr ' ' '\n' | while read url; do
+      case "${url}" in
+        git*|*.git)
+          log "Detecting date of latest commit" \
+              "in branch '${DOWNSTREAM_REF}' of git repository '${url}'"
+          repo="$(mktemp -d)"
+          git clone -q --depth 1 --branch "${ref}" "${url}" "${repo}"
+          url_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)"
+          ;;
+        http*)
+          log "Detecting last modification date of ${url}"
+          last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
+          [ -z "${last_modified_date}" ] || url_date="$(date +%s -d "${last_modified_date}")"
+          ;;
+        *)
+          log "Unsupported protocol for URL '${url}'" ;;
+      esac
+      if [ -n "${url_date-}" ]; then
+        log "$(date --utc -Iseconds -d "@${url_date}") for ${url}"
+        echo "${url_date}"
+      else
+        log "No date found for URL '${url}'"
+      fi
+      url_date=""
+    done
+  }
+
+##
+# Detect the date of all Docker images that are available for the image name.
+#
+# Reads the manifest list from the Docker registry
+# and extracts the date of all images.
+#
+# This job supports registry authentication as defined in
+# https://docs.docker.com/registry/spec/auth/token/
+# The following variables may be used for auth configuration:
+#   REGISTRY_BASE_URL      (required)
+#   REGISTRY_AUTH_BASE_URL (required)
+#   REGISTRY_AUTH_SERVICE  (required)
+#   CI_REGISTRY_USER       (optional)
+#   CI_REGISTRY_PASSWORD   (optional)
+# All required variables have default values appropriate for Docker Hub,
+# defined as top level variables in this file.
+##
+.docker_support:.trigger_on_update:.detect_image_dates: &detect_image_dates |
+  detect_image_dates() {
+    set -euo pipefail
+    log "Detecting dates of images available as ${IMAGE_NAME}:${IMAGE_VERSION}"
+    registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
+    manifest_header='Accept: application/vnd.docker.distribution.manifest.v2+json'
+    manifest_list_header='Accept: application/vnd.docker.distribution.manifest.list.v2+json'
+    # fetch auth token if required
+    if [ 'HTTP/1.1 401 Unauthorized' = \
+         "$(curl -I -sSL \
+              --header "${manifest_header}" \
+              "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+            | tr -d '\r' \
+            | head -n 1)" ]; then
+      token_url="${REGISTRY_AUTH_BASE_URL}/token?service=${REGISTRY_AUTH_SERVICE}&scope=repository:${IMAGE_NAME}:pull"
+      token=$(printf "%s\n" -sSL ${CI_REGISTRY_PASSWORD:+-u "${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
+              | curl -K - "${token_url}" \
+              | jq -r '.token')
+    fi
+    # fetch and iterate manifest list
+    curl -sSL \
+         --header "${manifest_list_header}" \
+         ${token:+--header "Authorization: Bearer ${token}"} \
+         "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+    | jq -r '.manifests[] | .digest + " " + (.platform | .os + "/" + .architecture + if (.variant != null) then "/" + .variant else "" end)' \
+    | while read manifest_digest platform; do
+      # find id of 'config' (a JSON blob containing the date) in the manifest
+      config_digest=$(curl -sSL \
+                          --header "${manifest_header}" \
+                          ${token:+--header "Authorization: Bearer ${token}"} \
+                          "${registry_base_url}/manifests/${manifest_digest}" \
+                        | jq -r '.config.digest')
+      if [ -n "${config_digest}" ]; then
+        image_date=$(curl -sSL \
+                       ${token:+--header "Authorization: Bearer ${token}"} \
+                       "${registry_base_url}/blobs/${config_digest}" \
+                     | jq -r '.created' \
+                     | xargs date +%s -d)
+      fi
+      # extract image date
+      if [ -n "${image_date-}" ]; then
+        log "$(date --utc -Iseconds -d "@${image_date}") for platform ${platform}"
+        echo "${image_date}"
+      else
+        log "No date found for image '${IMAGE_NAME}:${config_digest}'"
+      fi
+      image_date=""
+    done
+  }
+
+##
+# Read timestamps from stdin and write the latest one to stdout.
+##
+.docker_support:.trigger_on_update:.find_latest: &find_latest |
+  find_latest() {
+    latest="$(sort -r | head -n 1)"
+    if [ -z "${latest}" ]; then
+      log "No date found."
+    else
+      log "Latest date: $(date --utc -Iseconds -d "@${latest}")"
+      echo "${latest}"
+    fi
+  }
+
+##
+# Check if an update is available. If so, trigger a build.
+#
+# - To activate this job, set variable PIPELINE_MODE to 'update-check'.
+# - The variable UPDATE_CHECK_URLS is used to check the application date;
+#   it may contain a space-separated list of URLs pointing to a HTTP
+#   resource or a git repository.
+# - If the image is outdated, a pipeline for $DOWNSTREAM_PROJECT on branch
+#   $DOWNSTREAM_REF is triggered. Project and branch default to the current
+#   environment, so that by default the current project is build.
+#
+# This job is designed for projects that download and build an application
+# hosted externally. To automatically build a project when the external
+# application is updated, create a GitLab schedule with an interval of your
+# choice and set the variable PIPELINE_MODE to 'update-check'.
+##
+.docker_support:.trigger_on_update:
+  rules:
+  - if: '$PIPELINE_MODE == "update-check"'
+  image: alpine
+  before_script:
+  - set -euo pipefail
+  - apk add --no-cache coreutils jq git curl
+  - log() { echo >&2 "${@}"; }
+  - *detect_last_modifications
+  - *detect_image_dates
+  - *find_latest
+  script:
+  - |
+    echo "Image: ${IMAGE_NAME}:${IMAGE_VERSION}"
+    last_modification="$(detect_last_modifications "${UPDATE_CHECK_URLS}" "${DOWNSTREAM_REF}" | find_latest)"
+    image_date="$(detect_image_dates | find_latest)"
+    if [ -z "${last_modification-}" ] || [ -z "${image_date-}" ]; then
+      log "An error occured while detecting dates."
+      exit 1
+    elif [ "${last_modification}" -le "${image_date}" ]; then
+      log "Image is up-to-date."
+    else
+      log "Image is outdated. Triggering build of project '${DOWNSTREAM_PROJECT}' with ref '${DOWNSTREAM_REF}'."
+      downstream_project_url="${CI_API_V4_URL}/projects/$(jq -nr --arg v "${DOWNSTREAM_PROJECT}" '$v|@uri')"
+      curl -sSL \
+           --form "token=${CI_JOB_TOKEN}" \
+           --form "ref=${DOWNSTREAM_REF}" \
+           "${downstream_project_url}/trigger/pipeline"
+    fi
