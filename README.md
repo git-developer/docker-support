@@ -11,7 +11,7 @@ When the following configuration is saved as `.gitlab-ci.yml` in the same direct
 and ARMv7 and publish them to the Docker registry:
 ```yaml
 include:
-  remote: "https://github.com/git-developer/docker-support/raw/v3.0.0/gitlab-ci/docker-template.yml"
+  remote: "https://github.com/git-developer/docker-support/raw/v3.2.0/gitlab-ci/docker-template.yml"
 ```
 
 ### Pipeline Steps
@@ -115,7 +115,7 @@ image, or even start a container from it, before publishing to the registry.
 The following example uses the busybox version as image tag:
 ```yaml
 include:
-  remote: "https://github.com/git-developer/docker-support/raw/v3.0.0/gitlab-ci/docker-template.yml"
+  remote: "https://github.com/git-developer/docker-support/raw/v3.2.0/gitlab-ci/docker-template.yml"
 
 stages:
   - setup
