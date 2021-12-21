@@ -238,7 +238,7 @@ default:
           log "Detecting last modification date of ${url}"
           local headers last_modified_date
           headers="$(wget -q --spider -S "${url}" 2>&1)"
-          last_modified_date="$(echo ${headers} | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
+          last_modified_date="$(echo "${headers}" | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
           if [ -n "${last_modified_date}" ]; then
             url_date="$(date +%s -d "${last_modified_date}")"
           else
