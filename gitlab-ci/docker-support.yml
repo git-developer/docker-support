@@ -236,8 +236,14 @@ default:
           ;;
         http*)
           log "Detecting last modification date of ${url}"
-          last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
-          [ -z "${last_modified_date}" ] || url_date="$(date +%s -d "${last_modified_date}")"
+          local headers last_modified_date
+          headers="$(wget -q --spider -S "${url}" 2>&1)"
+          last_modified_date="$(echo ${headers} | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
+          if [ -n "${last_modified_date}" ]; then
+            url_date="$(date +%s -d "${last_modified_date}")"
+          else
+            log "Server response: ${headers}"
+          fi
           ;;
         *)
           log "Unsupported protocol for URL '${url}'" ;;
