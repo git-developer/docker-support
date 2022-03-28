@@ -231,7 +231,7 @@ default:
           log "Detecting date of latest commit in branch '${ref}' of git repository '${url}'"
           repo="$(mktemp -d)"
           git clone -q --depth 1 --branch "${ref}" "${url}" "${repo}"
-          url_date="$(git -C "${repo}" --no-pager log -1 --format="%ai" | xargs -0 date +%s -d)"
+          url_date="$(git -C "${repo}" --no-pager log -1 --format="%ci" | xargs -0 date +%s -d)"
           ;;
         http*)
           log "Detecting last modification date of ${url}"
