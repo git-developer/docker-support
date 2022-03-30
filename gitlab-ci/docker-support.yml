@@ -224,13 +224,12 @@ default:
   detect_last_modifications() {
     set -euo pipefail
     urls="${1}"
-    ref="${2-}"
     echo "${urls}" | tr ' ' '\n' | while read url; do
       case "${url}" in
         git*|*.git)
-          log "Detecting date of latest commit ${ref:+in branch '${ref}' }of git repository '${url}'"
+          log "Detecting date of latest commit of git repository '${url}'"
           repo="$(mktemp -d)"
-          git clone -q --depth 1 ${ref:+--branch "${ref}"} "${url}" "${repo}"
+          git clone -q --depth 1 "${url}" "${repo}"
           url_date="$(git -C "${repo}" --no-pager log -1 --format="%ci" | xargs -0 date +%s -d)"
           ;;
         http*)
