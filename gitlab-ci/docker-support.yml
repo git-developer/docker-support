@@ -224,13 +224,13 @@ default:
   detect_last_modifications() {
     set -euo pipefail
     urls="${1}"
-    ref="${2}"
+    ref="${2-}"
     echo "${urls}" | tr ' ' '\n' | while read url; do
       case "${url}" in
         git*|*.git)
-          log "Detecting date of latest commit in branch '${ref}' of git repository '${url}'"
+          log "Detecting date of latest commit ${ref:+in branch '${ref}' }of git repository '${url}'"
           repo="$(mktemp -d)"
-          git clone -q --depth 1 --branch "${ref}" "${url}" "${repo}"
+          git clone -q --depth 1 ${ref:+--branch "${ref}"} "${url}" "${repo}"
           url_date="$(git -C "${repo}" --no-pager log -1 --format="%ci" | xargs -0 date +%s -d)"
           ;;
         http*)
@@ -362,7 +362,7 @@ default:
   script:
   - |
     echo "Image: ${IMAGE_NAME}:${IMAGE_VERSION}"
-    last_modification="$(detect_last_modifications "${UPDATE_CHECK_URLS}" "${DOWNSTREAM_REF}" | find_latest)"
+    last_modification="$(detect_last_modifications "${UPDATE_CHECK_URLS}" | find_latest)"
     image_date="$(detect_image_dates | find_latest)"
     if [ -z "${last_modification-}" ] || [ -z "${image_date-}" ]; then
       log "An error occured while detecting dates."
