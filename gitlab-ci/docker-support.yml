@@ -3,9 +3,9 @@ variables:
   IMAGE_NAME: "${CI_PROJECT_PATH}"
   IMAGE_VERSION: "latest"
   IMAGE_PLATFORMS: "linux/amd64"
-  DOCKER_VERSION: "20.10.11"
-  DOCKER_BUILDX_VERSION: "v0.7.1"
-  DOCKER_CREDENTIAL_PASS_VERSION: "v0.6.4"
+  DOCKER_VERSION: "20.10.18"
+  DOCKER_BUILDX_VERSION: "v0.9.1"
+  DOCKER_CREDENTIAL_PASS_VERSION: "v0.7.0"
   DOCKER_CLI_EXPERIMENTAL: "enabled"
   BUILD_CACHE: "build-cache"
 
@@ -41,7 +41,7 @@ default:
 # stored in a plain text file.
 ##
 .docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
-  wget -q -O - "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}-amd64.tar.gz" | tar -C /usr/bin -xz
+  wget -q -O /usr/bin/docker-credential-pass "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}.linux-amd64"
   chmod +x /usr/bin/docker-credential-pass
   apk add gnupg rng-tools pass
   rngd -r /dev/urandom
