@@ -43,9 +43,9 @@ default:
 .docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
   wget -q -O - "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}-amd64.tar.gz" | tar -C /usr/bin -xz
   chmod +x /usr/bin/docker-credential-pass
-  apk add gnupg
-  apk add --no-cache -X https://alpine.global.ssl.fastly.net/alpine/edge/community pass
-  export gpg_passphrase="${GPG_PASSPHRASE:-$(cat /dev/urandom | tr -dc 'a-zA-Z0-9!#%&*+,-./:;<=>?@^_~;' | fold -w 64 | head -n 1)}"
+  apk add gnupg rng-tools pass
+  rngd -r /dev/urandom
+  gpg_passphrase="${GPG_PASSPHRASE:-$(set +o pipefail; </dev/urandom tr -dc 'a-zA-Z0-9!#%&*+,-./:;<=>?@^_~;' | fold -w 64 | head -n 1)}"
   cat <<EOF | gpg --batch --gen-key
   Key-Type: 1
   Name-Real: docker-credential-pass
