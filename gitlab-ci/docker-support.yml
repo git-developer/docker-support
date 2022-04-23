@@ -308,9 +308,11 @@ default:
                           "${registry_base_url}/manifests/${manifest_digest}" \
                         | jq -r '.config.digest')
       if [ -n "${config_digest}" ]; then
-        image_date=$(curl -sSL \
+        blob_metadata=$(curl -sSL \
                        ${token:+--header "Authorization: Bearer ${token}"} \
-                       "${registry_base_url}/blobs/${config_digest}" \
+                       "${registry_base_url}/blobs/${config_digest}")
+        log "BLOB metadata: ${blob_metadata}"
+        image_date=$(echo "${blob_metadata}" \
                      | jq -r '.created' \
                      | xargs date +%s -d)
       fi
