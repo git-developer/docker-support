@@ -45,7 +45,12 @@ default:
   chmod +x /usr/bin/docker-credential-pass
   apk add gnupg rng-tools pass
   rngd -r /dev/urandom
-  gpg_passphrase="${GPG_PASSPHRASE:-$(set +o pipefail; </dev/urandom tr -dc 'a-zA-Z0-9!#%&*+,-./:;<=>?@^_~;' | fold -w 64 | head -n 1)}"
+  # default: read 64 random bytes and map to printable characters
+  gpg_passphrase="${GPG_PASSPHRASE:-$(
+    </dev/urandom hexdump -v -n 64 -e '16/1 "%u\n"' \
+    | while read -r i; do expr "${i}" % 94 + 33; done \
+    | env printf $(xargs printf '\\x%x')
+  )}"
   cat <<EOF | gpg --batch --gen-key
   Key-Type: 1
   Name-Real: docker-credential-pass
