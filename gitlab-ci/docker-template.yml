@@ -1,9 +1,9 @@
-include:
-- local: 'gitlab-ci/docker-support.yml'
-
 variables:
   BUILD_CONTEXT:      image
   IMAGE_PLATFORMS:    linux/amd64,linux/arm/v7
+
+include:
+  remote: "https://github.com/git-developer/docker-support/raw/feature/gitlab-ci/gitlab-ci/docker-support.yml"
 
 stages:
 - post_checkout
