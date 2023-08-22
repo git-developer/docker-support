@@ -1,0 +1,175 @@
+#!/bin/bash
+set -euo pipefail
+if [ "${TRACE-}" ]; then set -x; fi
+
+UPDATE_CHECK_URLS="${UPDATE_CHECK_URLS:-${CI_REPOSITORY_URL}}"
+IMAGE_NAME="${IMAGE_NAME:-${CI_PROJECT_PATH}}"
+IMAGE_VERSION="${IMAGE_VERSION:-latest}"
+REGISTRY_BASE_URL="${REGISTRY_BASE_URL:-https://index.docker.io}"
+REGISTRY_AUTH_BASE_URL="${REGISTRY_AUTH_BASE_URL:-https://auth.docker.io}"
+REGISTRY_AUTH_SERVICE="${REGISTRY_AUTH_SERVICE:-registry.docker.io}"
+
+log() {
+  echo >&2 "${@}"
+}
+
+##
+# Install all dependencies required for this script
+##
+prepare_dependencies() {
+  dependencies='coreutils jq git curl'
+
+  if command -V apk >/dev/null 2>&1; then
+    echo "${dependencies}" | tr ' ' $'\n' | while read -r dep; do
+      apk info | grep -q "^${dep}$"
+    done || {
+      apk update
+      echo "${dependencies}" | xargs apk add --no-cache
+    }
+  elif command -V apt-get >/dev/null 2>&1; then
+    echo "${dependencies}" | tr ' ' $'\n' | while read -r dep; do
+      dpkg -l "${dep}" | grep -q "^ii\s*${dep}"
+    done || sudo sh -c "apt-get update; echo '${dependencies}' | xargs apt-get install -y"
+  fi
+}
+
+##
+# Detect last modification date for a list of URLs.
+##
+detect_last_modifications() {
+  urls="${1}"
+  ref="${2-}"
+  echo "${urls}" | tr ' ' '\n' | while read url; do
+    case "${url}" in
+      git*|*.git)
+        log "Detecting date of latest commit of git repository '${url}'"
+        repo="$(mktemp -d)"
+        git clone -q --depth 1 --single-branch -c advice.detachedHead=false ${ref:+--branch "${ref}"} "${url}" "${repo}"
+        url_date="$(git -C "${repo}" --no-pager log -1 --format="%ci" | xargs -0 date +%s -d)"
+        ;;
+      http*)
+        log "Detecting last modification date of ${url}"
+        last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
+        [ -z "${last_modified_date}" ] || url_date="$(date +%s -d "${last_modified_date}")"
+        ;;
+      *)
+        log "Unsupported protocol for URL '${url}'" ;;
+    esac
+    if [ -n "${url_date-}" ]; then
+      log "$(date --utc -Iseconds -d "@${url_date}") for ${url}"
+      echo "${url_date}"
+    else
+      log "No date found for URL '${url}'"
+    fi
+    url_date=""
+  done
+}
+
+##
+# Detect the date of all Docker images that are available for the image name.
+#
+# Reads the manifest list from the Docker registry
+# and extracts the date of all images.
+#
+# This job supports registry authentication as defined in
+# https://docs.docker.com/registry/spec/auth/token/
+# The following variables may be used for auth configuration:
+#   REGISTRY_BASE_URL      (required)
+#   REGISTRY_AUTH_BASE_URL (required)
+#   REGISTRY_AUTH_SERVICE  (required)
+#   CI_REGISTRY_USER       (optional)
+#   CI_REGISTRY_PASSWORD   (optional)
+# All required variables have default values appropriate for Docker Hub,
+# defined as top level variables in this file.
+##
+detect_image_dates() {
+  log "Detecting dates of images available as ${IMAGE_NAME}:${IMAGE_VERSION}"
+  registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
+  manifest_header='Accept: application/vnd.docker.distribution.manifest.v2+json'
+  manifest_list_header='Accept: application/vnd.docker.distribution.manifest.list.v2+json'
+  # fetch auth token if required
+  if [ 'HTTP/1.1 401 Unauthorized' = \
+       "$(curl -I -sSL \
+            --header "${manifest_header}" \
+            "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+          | tr -d '\r' \
+          | head -n 1)" ]; then
+    token_url="${REGISTRY_AUTH_BASE_URL}/token?service=${REGISTRY_AUTH_SERVICE}&scope=repository:${IMAGE_NAME}:pull"
+    token=$(printf "%s\n" -sSL ${CI_REGISTRY_PASSWORD:+-u "${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
+            | curl -K - "${token_url}" \
+            | jq -r '.token')
+  fi
+  # fetch and iterate manifest list
+  curl -sSL \
+       --header "${manifest_list_header}" \
+       ${token:+--header "Authorization: Bearer ${token}"} \
+       "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+  | jq -r '.manifests[] | .digest + " " + (.platform | .os + "/" + .architecture + if (.variant != null) then "/" + .variant else "" end)' \
+  | while read manifest_digest platform; do
+    # find id of 'config' (a JSON blob containing the date) in the manifest
+    config_digest=$(curl -sSL \
+                        --header "${manifest_header}" \
+                        ${token:+--header "Authorization: Bearer ${token}"} \
+                        "${registry_base_url}/manifests/${manifest_digest}" \
+                      | jq -r '.config.digest')
+    if [ -n "${config_digest}" ]; then
+      image_date=$(curl -sSL \
+                     ${token:+--header "Authorization: Bearer ${token}"} \
+                     "${registry_base_url}/blobs/${config_digest}" \
+                   | jq -r '.created' \
+                   | xargs date +%s -d)
+    fi
+    # extract image date
+    if [ -n "${image_date-}" ]; then
+      log "$(date --utc -Iseconds -d "@${image_date}") for platform ${platform}"
+      echo "${image_date}"
+    else
+      log "No date found for image '${IMAGE_NAME}:${config_digest}'"
+    fi
+    image_date=""
+  done
+}
+
+##
+# Read timestamps from stdin and write the latest one to stdout.
+##
+find_latest() {
+  latest="$(sort -r | head -n 1)"
+  if [ -z "${latest}" ]; then
+    log "No date found."
+  else
+    log "Latest date: $(date --utc -Iseconds -d "@${latest}")"
+    echo "${latest}"
+  fi
+}
+
+##
+# Check if an update is available.
+#
+# - The variable UPDATE_CHECK_URLS is used to check the application date;
+#   it may contain a space-separated list of URLs pointing to a HTTP
+#   resource or a git repository.
+#
+# This job is designed for projects that download and build an application
+# hosted externally.
+##
+update_check() {
+  log "Image: ${IMAGE_NAME}:${IMAGE_VERSION}"
+  last_modification="$(detect_last_modifications "${UPDATE_CHECK_URLS}" "${UPDATE_CHECK_REF-}" | find_latest)"
+  image_date="$(detect_image_dates | find_latest)"
+  if [ -z "${last_modification-}" ] || [ -z "${image_date-}" ]; then
+    log "An error occured while detecting dates."
+    exit 1
+  elif [ "${last_modification}" -le "${image_date}" ]; then
+    echo 'up-to-date'
+  else
+    echo 'outdated'
+  fi
+}
+
+main() {
+  prepare_dependencies
+  update_check "${@}"
+}
+
+main "${@}"
