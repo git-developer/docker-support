@@ -166,6 +166,8 @@ default:
         printf "%s\0" "--platform" "${IMAGE_PLATFORMS}"
         printf "%s\0" "--cache-to" "type=local,dest=${BUILD_CACHE},mode=max"
         printf "%s\0" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
+        printf "%s\0" "--attest" "type=sbom"
+        printf "%s\0" "--attest" "type=provenance"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
         printf "%s\0" "${BUILD_CONTEXT}"
       } | xargs -0 docker buildx build
