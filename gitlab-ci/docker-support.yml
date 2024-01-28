@@ -190,6 +190,8 @@ default:
         printf "%s\0" "--platform" "${IMAGE_PLATFORMS%%,*}"
         printf "%s\0" "--load"
         [ ! -d "${BUILD_CACHE}" ] || printf "%s\0" "--cache-from" "type=local,src=${BUILD_CACHE}"
+        printf "%s\0" "--attest" "type=sbom"
+        printf "%s\0" "--attest" "type=provenance"
         printf "%s\0" "--tag" "${IMAGE_NAME}:${BUILD_CACHE}"
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
         printf "%s\0" "${BUILD_CONTEXT}"
@@ -219,6 +221,8 @@ default:
         [ ! -d ./tags       ] || find ./tags       -type f -exec sh -c 'printf "%s\0" "--tag"       "$(cat {})"' \;
         [ ! -d ./labels     ] || find ./labels     -type f -exec sh -c 'printf "%s\0" "--label"     "$(cat {})"' \;
         [ ! -d ./build-args ] || find ./build-args -type f -exec sh -c 'printf "%s\0" "--build-arg" "$(cat {})"' \;
+        printf "%s\0" "--attest" "type=sbom"
+        printf "%s\0" "--attest" "type=provenance"
         printf "%s\0" "${BUILD_CONTEXT}"
       } | xargs -0 docker buildx build
   after_script:
