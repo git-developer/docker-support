@@ -27,7 +27,7 @@ default:
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
   mkdir -p ~/.docker/cli-plugins
-  curl -sSL -o ~/.docker/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/${DOCKER_BUILDX_VERSION}/buildx-${DOCKER_BUILDX_VERSION}.linux-amd64"
+  wget -q -O ~/.docker/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/${DOCKER_BUILDX_VERSION}/buildx-${DOCKER_BUILDX_VERSION}.linux-amd64"
   chmod +x ~/.docker/cli-plugins/docker-buildx
   docker buildx create --use --name builder
 
@@ -41,7 +41,7 @@ default:
 # stored in a plain text file.
 ##
 .docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
-  curl -sSL -o /usr/bin/docker-credential-pass "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}.linux-amd64"
+  wget -q -O /usr/bin/docker-credential-pass "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}.linux-amd64"
   chmod +x /usr/bin/docker-credential-pass
   apk add gnupg rng-tools pass
   rngd -r /dev/urandom
