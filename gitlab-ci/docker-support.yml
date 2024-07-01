@@ -27,7 +27,7 @@ default:
 .docker_support:.build_image:.configure_multiarch_builder: &configure_multiarch_builder |
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
   mkdir -p ~/.docker/cli-plugins
-  wget -q -O ~/.docker/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/${DOCKER_BUILDX_VERSION}/buildx-${DOCKER_BUILDX_VERSION}.linux-amd64"
+  curl -sSL -o ~/.docker/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/${DOCKER_BUILDX_VERSION}/buildx-${DOCKER_BUILDX_VERSION}.linux-amd64"
   chmod +x ~/.docker/cli-plugins/docker-buildx
   docker buildx create --use --name builder
 
@@ -41,7 +41,7 @@ default:
 # stored in a plain text file.
 ##
 .docker_support:.build_image:.configure_docker_auth_pass: &configure_docker_auth_pass |
-  wget -q -O /usr/bin/docker-credential-pass "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}.linux-amd64"
+  curl -sSL -o /usr/bin/docker-credential-pass "https://github.com/docker/docker-credential-helpers/releases/download/${DOCKER_CREDENTIAL_PASS_VERSION}/docker-credential-pass-${DOCKER_CREDENTIAL_PASS_VERSION}.linux-amd64"
   chmod +x /usr/bin/docker-credential-pass
   apk add gnupg rng-tools pass
   rngd -r /dev/urandom
@@ -96,13 +96,13 @@ default:
 ##
 .docker_support:.collect_labels:
   extends: .docker_support:.build_job
-  image: "alpine"
+  image: alpine
   before_script:
   - set -euo pipefail
   script:
-  - apk add wget jq coreutils
-  - gitlab_project_metadata="$(wget -q -O - "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}?license=yes")"
-  - gitlab_users_metadata="$(  wget -q -O - "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/users")"
+  - apk add curl jq coreutils
+  - gitlab_project_metadata="$(curl -sSL "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}?license=yes")"
+  - gitlab_users_metadata="$(  curl -sSL "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/users")"
   - value_of() { printf "%s" "${gitlab_project_metadata}" | jq -r "${1} // empty"; }
   - authors="$(printf "%s" "${gitlab_users_metadata}" | jq -r '. | map((.name // empty) + if .web_url != null then " ("+.web_url+")" else "" end) | join(", ")')"
   - oci='org.opencontainers.image'
@@ -242,7 +242,7 @@ default:
           ;;
         http*)
           log "Detecting last modification date of ${url}"
-          last_modified_date="$(wget -q --spider -S "${url}" 2>&1 | sed -nE 's/\s*Last-Modified: ([^\s].+)/\1/p')"
+          last_modified_date="$(curl -sSL -I -i "${url}" | sed -nE 's/last-modified: (.+)/\1/pi')"
           [ -z "${last_modified_date}" ] || url_date="$(date +%s -d "${last_modified_date}")"
           ;;
         *)
@@ -280,8 +280,8 @@ default:
     set -euo pipefail
     log "Detecting dates of images available as ${IMAGE_NAME}:${IMAGE_VERSION}"
     registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
-    manifest_header='Accept: application/vnd.docker.distribution.manifest.v2+json'
-    manifest_list_header='Accept: application/vnd.docker.distribution.manifest.list.v2+json'
+    manifest_header='Accept: application/vnd.oci.image.manifest.v1+json'
+    manifest_list_header='Accept: application/vnd.oci.image.index.v1+json'
     # fetch auth token if required
     if [ 'HTTP/1.1 401 Unauthorized' = \
          "$(curl -I -sSL \
@@ -290,34 +290,33 @@ default:
             | tr -d '\r' \
             | head -n 1)" ]; then
       token_url="${REGISTRY_AUTH_BASE_URL}/token?service=${REGISTRY_AUTH_SERVICE}&scope=repository:${IMAGE_NAME}:pull"
-      token=$(printf "%s\n" -s -S -L ${CI_REGISTRY_PASSWORD:+"-u ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
+      token="$(printf "%s\n" -s -S -L ${CI_REGISTRY_PASSWORD:+"-u ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
               | curl -K - "${token_url}" \
-              | jq -r '.token')
+              | jq -r '.token')"
     fi
     # fetch and iterate manifest list
     curl -sSL \
          --header "${manifest_list_header}" \
          ${token:+--header "Authorization: Bearer ${token}"} \
          "${registry_base_url}/manifests/${IMAGE_VERSION}" \
-    | jq -r '.manifests[] | .digest + " " + (.platform | .os + "/" + .architecture + if (.variant != null) then "/" + .variant else "" end)' \
+    | jq -r '.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest" | not) | .digest + " " + (.platform | .os + "/" + .architecture + if (.variant != null) then "/" + .variant else "" end)' \
     | while read manifest_digest platform; do
-      # find id of 'config' (a JSON blob containing the date) in the manifest
-      config_digest=$(curl -sSL \
+      # find id of 'config' (a JSON blob having the date) in the manifest
+      config_digest="$(curl -sSL \
                           --header "${manifest_header}" \
                           ${token:+--header "Authorization: Bearer ${token}"} \
                           "${registry_base_url}/manifests/${manifest_digest}" \
-                        | jq -r '.config.digest')
-      if [ -n "${config_digest}" ]; then
-        image_date=$(curl -sSL \
+                        | jq -r '.config.digest')"
+      if [ "${config_digest}" ]; then
+        image_date="$(curl -sSL -I -i \
                        ${token:+--header "Authorization: Bearer ${token}"} \
                        "${registry_base_url}/blobs/${config_digest}" \
-                     | jq -r '.created' \
-                     | xargs date +%s -d)
+                     | sed -nE 's/last-modified: (.+)/\1/pi')"
       fi
       # extract image date
-      if [ -n "${image_date-}" ]; then
-        log "$(date --utc -Iseconds -d "@${image_date}") for platform ${platform}"
-        echo "${image_date}"
+      if [ "${image_date-}" ]; then
+        log "$(date --utc -Iseconds -d "${image_date}") for platform ${platform}"
+        date +%s -d "${image_date}"
       else
         log "No date found for image '${IMAGE_NAME}:${config_digest}'"
       fi
