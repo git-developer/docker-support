@@ -280,12 +280,13 @@ default:
     set -euo pipefail
     log "Detecting dates of images available as ${IMAGE_NAME}:${IMAGE_VERSION}"
     registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
-    manifest_header='Accept: application/vnd.oci.image.manifest.v1+json'
-    manifest_list_header='Accept: application/vnd.docker.distribution.manifest.list.v2+json'
+    # Docker: application/vnd.docker.distribution.manifest.list.v2+json
+    # OCI:    application/vnd.oci.image.index.v1+json
+    mediatype_index='application/vnd.docker.distribution.manifest.list.v2+json'
     # fetch auth token if required
     if [ 'HTTP/1.1 401 Unauthorized' = \
          "$(curl -I -sSL \
-              --header "${manifest_header}" \
+              --header "Accept: ${mediatype_index}" \
               "${registry_base_url}/manifests/${IMAGE_VERSION}" \
             | tr -d '\r' \
             | head -n 1)" ]; then
@@ -296,14 +297,14 @@ default:
     fi
     # fetch and iterate manifest list
     curl -sSL \
-         --header "${manifest_list_header}" \
+         --header "Accept: ${mediatype_index}" \
          ${token:+--header "Authorization: Bearer ${token}"} \
          "${registry_base_url}/manifests/${IMAGE_VERSION}" \
-    | jq -r '.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest" | not) | .digest + " " + (.platform | .os + "/" + .architecture + if (.variant != null) then "/" + .variant else "" end)' \
-    | while read manifest_digest platform; do
+    | jq -r '.manifests[] | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest" | not) | .digest + " " + .mediaType + " " + (.platform | .os + "/" + .architecture + if (.variant != null) then "/" + .variant else "" end)' \
+    | while read manifest_digest media_type platform; do
       # find id of 'config' (a JSON blob having the date) in the manifest
       config_digest="$(curl -sSL \
-                          --header "${manifest_header}" \
+                          ${media_type:+--header "Accept: ${media_type}"} \
                           ${token:+--header "Authorization: Bearer ${token}"} \
                           "${registry_base_url}/manifests/${manifest_digest}" \
                         | jq -r '.config.digest')"
