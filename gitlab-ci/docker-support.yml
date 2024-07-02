@@ -281,7 +281,7 @@ default:
     log "Detecting dates of images available as ${IMAGE_NAME}:${IMAGE_VERSION}"
     registry_base_url="${REGISTRY_BASE_URL}/v2/${IMAGE_NAME}"
     manifest_header='Accept: application/vnd.oci.image.manifest.v1+json'
-    manifest_list_header='Accept: application/vnd.oci.image.index.v1+json'
+    manifest_list_header='Accept: application/vnd.docker.distribution.manifest.list.v2+json'
     # fetch auth token if required
     if [ 'HTTP/1.1 401 Unauthorized' = \
          "$(curl -I -sSL \
