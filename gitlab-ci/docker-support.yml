@@ -284,12 +284,10 @@ default:
     # OCI:    application/vnd.oci.image.index.v1+json
     mediatype_index='application/vnd.docker.distribution.manifest.list.v2+json'
     # fetch auth token if required
-    if [ 'HTTP/1.1 401 Unauthorized' = \
-         "$(curl -I -sSL \
-              --header "Accept: ${mediatype_index}" \
-              "${registry_base_url}/manifests/${IMAGE_VERSION}" \
-            | tr -d '\r' \
-            | head -n 1)" ]; then
+    if curl -I -sSL --header "Accept: ${mediatype_index}" "${registry_base_url}/manifests/${IMAGE_VERSION}" \
+        | tr -d '\r' \
+        | head -n 1 \
+        | grep -q -P 'HTTP/.+ 401'; then
       token_url="${REGISTRY_AUTH_BASE_URL}/token?service=${REGISTRY_AUTH_SERVICE}&scope=repository:${IMAGE_NAME}:pull"
       token="$(printf "%s\n" -s -S -L ${CI_REGISTRY_PASSWORD:+"-u ${CI_REGISTRY_USER}:${CI_REGISTRY_PASSWORD}"} \
               | curl -K - "${token_url}" \
